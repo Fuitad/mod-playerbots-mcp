@@ -239,7 +239,15 @@ class KnownRecipeCheck(CheckRequest):
 class EconomyCheck(CheckRequest):
     condition: Literal["economy"] = "economy"
     after_sequence: int = Field(ge=0)
-    economy_outcome: Literal["scheduled", "operation", "no_candidate", "failed_precondition"]
+    economy_outcome: Literal[
+        "scheduled",
+        "operation",
+        "no_candidate",
+        "failed_precondition",
+        "released",
+        "blocked",
+        "quarantined",
+    ]
 
 
 AnyCheck = (
@@ -473,11 +481,41 @@ class Career(WireModel):
 class Economy(WireModel):
     available: bool
     sequence: int
-    phase: Literal["none", "collect_auction_mail", "craft", "buy_reagent", "buy_recipe", "sell_surplus"]
-    outcome: Literal["unavailable", "scheduled", "operation", "no_candidate", "failed_precondition"]
+    phase: Literal[
+        "none",
+        "collect_auction_mail",
+        "craft",
+        "buy_reagent",
+        "buy_recipe",
+        "buy_finished_good",
+        "use_finished_good",
+        "recover_finished_good",
+        "sell_surplus",
+        "gather",
+        "market_making",
+    ]
+    outcome: Literal[
+        "unavailable",
+        "scheduled",
+        "operation",
+        "no_candidate",
+        "failed_precondition",
+        "released",
+        "blocked",
+        "quarantined",
+    ]
+    chain_public_id: str
+    operation_identity: str
+    market_id: int
+    item_family: str
     work_order_spell_id: int
+    remaining_quantity: int
+    claim_age_seconds: int
+    blocker_code: str
     consecutive_failures: int
+    cooldown_seconds: int
     next_eligible_time: int
+    quarantined: bool
 
 
 class RecipeCollection(WireModel):

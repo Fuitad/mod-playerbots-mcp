@@ -859,3 +859,25 @@ TEST_F(PlayerbotVerificationOperationTest, StatusAndListReportReadinessAndGuidOr
     EXPECT_NE(secondPage.resultJson.find(R"("relationshipValid":)"), std::string::npos);
     EXPECT_NE(secondPage.resultJson.find(R"("transportAttached":false)"), std::string::npos);
 }
+
+TEST_F(PlayerbotVerificationOperationTest, ListReplacesInvalidUtf8WithoutCorruptingValidNames)
+{
+    TestPlayer* master = AddRealPlayer(1, "VerificationMaster");
+    TestPlayer* bot = AddRealPlayer(3, "TemporaryBotName");
+    std::string name = "Bjorn";
+    name.append("\xC3\xB6");
+    name.push_back(static_cast<char>(0xFF));
+    name.append("Bot");
+    bot->SetName(name);
+    ASSERT_NE(AddBot(bot, master), nullptr);
+
+    Request request = SimpleRequest(Operation::List);
+    request.limit = 1;
+    Response const response = DispatchWithPump(request);
+
+    ASSERT_TRUE(response.ok);
+    EXPECT_NE(response.resultJson.find("Bjorn\xC3\xB6\xEF\xBF\xBD"
+                                       "Bot"),
+              std::string::npos);
+    EXPECT_EQ(response.resultJson.find(static_cast<char>(0xFF)), std::string::npos);
+}

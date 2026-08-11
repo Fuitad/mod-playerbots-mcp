@@ -7,11 +7,13 @@
 #include "PlayerbotVerificationOperation.h"
 
 #include <G3D/g3dmath.h>
+#include <utf8.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <iterator>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -87,8 +89,12 @@ std::string_view LoopObjectiveKindName(PlayerbotLoopObjectiveKind kind)
 
 void AppendJsonString(std::ostringstream& out, std::string const& value)
 {
+    std::string sanitized;
+    sanitized.reserve(value.size());
+    utf8::replace_invalid(value.begin(), value.end(), std::back_inserter(sanitized));
+
     out << '"';
-    for (unsigned char character : value)
+    for (unsigned char character : sanitized)
     {
         switch (character)
         {

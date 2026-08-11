@@ -35,6 +35,7 @@ from playerbot_mcp.protocol import (
     ActionCheck,
     AnomaliesRequest,
     CommandRequest,
+    EconomyCheck,
     ErrorCode,
     InspectRequest,
     InspectResult,
@@ -341,6 +342,15 @@ class TestValuePreservation:
         assert result.action.latest_attempt.sequence == 7
         assert result.action.completeness.total_count == 7
         assert result.economy.sequence == 88
+        assert result.economy.chain_public_id == "chn_0123456789abcdef"
+        assert result.economy.operation_identity == "buy_reagent:2589:20"
+        assert result.economy.market_id == 7
+        assert result.economy.item_family == "exact_reagent:2589"
+        assert result.economy.remaining_quantity == 20
+        assert result.economy.claim_age_seconds == 12
+        assert result.economy.blocker_code == ""
+        assert result.economy.cooldown_seconds == 60
+        assert result.economy.quarantined is False
 
     def test_recipe_ids_keep_the_order_the_server_sorted_them_into(self) -> None:
         result = InspectResult.model_validate(inspection_payload())
@@ -354,6 +364,27 @@ class TestValuePreservation:
         assert result.career.source == "loaded"
         assert result.economy.outcome == "operation"
         assert result.economy.phase == "buy_reagent"
+
+    @pytest.mark.parametrize(
+        "phase",
+        [
+            "buy_finished_good",
+            "use_finished_good",
+            "recover_finished_good",
+            "gather",
+            "market_making",
+        ],
+    )
+    def test_every_extended_economy_phase_is_accepted(self, phase: str) -> None:
+        payload = inspection_payload()
+        payload["economy"]["phase"] = phase
+        assert InspectResult.model_validate(payload).economy.phase == phase
+
+    @pytest.mark.parametrize("outcome", ["released", "blocked", "quarantined"])
+    def test_every_extended_economy_outcome_is_accepted(self, outcome: str) -> None:
+        payload = inspection_payload()
+        payload["economy"]["outcome"] = outcome
+        assert InspectResult.model_validate(payload).economy.outcome == outcome
 
     @pytest.mark.parametrize(
         ("section", "field", "value"),
@@ -526,3 +557,14 @@ class TestConditionBuilding:
         built = build_check("money_decrease", bot_guid=3, baseline_copper=500)
         assert isinstance(built, MoneyDecreaseCheck)
         assert built.baseline_copper == 500
+
+    @pytest.mark.parametrize("outcome", ["released", "blocked", "quarantined"])
+    def test_every_emitted_economy_terminal_outcome_can_be_awaited(self, outcome: str) -> None:
+        built = build_check(
+            "economy",
+            bot_guid=3,
+            after_sequence=88,
+            economy_outcome=outcome,
+        )
+        assert isinstance(built, EconomyCheck)
+        assert built.economy_outcome == outcome
