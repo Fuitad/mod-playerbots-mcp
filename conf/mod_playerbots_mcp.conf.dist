@@ -1,0 +1,4 @@
+[worldserver]
+
+# Loopback verification listener port. Zero disables the server.
+PlayerbotsMCP.Port = 0

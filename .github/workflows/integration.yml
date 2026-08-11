@@ -1,0 +1,70 @@
+name: AzerothCore Integration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  worldserver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out Playerbot compatible AzerothCore
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: mod-playerbots/azerothcore-wotlk
+          ref: Playerbot
+          path: core
+
+      - name: Check out public Playerbots fork
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Fuitad/mod-playerbots-upstream
+          path: core/modules/mod-playerbots
+
+      - name: Check out Playerbot Personality
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Fuitad/mod-playerbot-personality
+          path: core/modules/mod-playerbot-personality
+
+      - name: Check out Playerbots Economy
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Fuitad/mod-playerbots-economy
+          path: core/modules/mod-playerbots-economy
+
+      - name: Check out Playerbots Recovery
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Fuitad/mod-playerbots-recovery
+          path: core/modules/mod-playerbots-recovery
+
+      - name: Check out Playerbots Telemetry
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Fuitad/mod-playerbots-telemetry
+          path: core/modules/mod-playerbots-telemetry
+
+      - name: Check out Playerbots MCP
+        uses: actions/checkout@v7.0.1
+        with:
+          path: core/modules/mod-playerbots-mcp
+
+      - name: Apply the public core test harness patch until it is merged
+        run: |
+          if ! grep -q 'target_link_libraries(unit_tests modules scripts)' core/src/test/CMakeLists.txt ||
+             ! grep -q 'GetPlayerbotsDBRevision' core/src/test/mocks/WorldMock.h; then
+            git -C core apply \\
+              modules/mod-playerbots/patches/azerothcore-playerbot-test-harness.patch
+          fi
+
+      - name: Configure AzerothCore
+        run: >-
+          cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release
+          -DSCRIPTS=static -DMODULES=static -DBUILD_TESTING=ON
+
+      - name: Build worldserver and unit tests
+        run: cmake --build core/build --target worldserver unit_tests --parallel 8
+
+      - name: Run unit tests
+        run: ctest --test-dir core/build --output-on-failure
