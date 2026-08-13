@@ -24,8 +24,8 @@ jobs:
       - name: Check out Playerbot Personality
         uses: actions/checkout@v7.0.1
         with:
-          repository: Fuitad/mod-playerbot-personality
-          path: core/modules/mod-playerbot-personality
+          repository: Fuitad/mod-playerbots-personality
+          path: core/modules/mod-playerbots-personality
 
       - name: Check out Playerbots Economy
         uses: actions/checkout@v7.0.1
