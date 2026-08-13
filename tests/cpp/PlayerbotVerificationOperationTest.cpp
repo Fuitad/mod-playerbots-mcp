@@ -829,7 +829,7 @@ TEST_F(PlayerbotVerificationOperationTest, StatusAndListReportReadinessAndGuidOr
     Response const status = DispatchWithPump(SimpleRequest(Operation::Status));
     ASSERT_TRUE(status.ok);
     EXPECT_NE(status.resultJson.find(R"("protocolSchemaVersion":2)"), std::string::npos);
-    EXPECT_NE(status.resultJson.find(R"("inspectionSchemaVersion":2)"), std::string::npos);
+    EXPECT_NE(status.resultJson.find(R"("inspectionSchemaVersion":3)"), std::string::npos);
     EXPECT_NE(status.resultJson.find(R"("moduleEnabled":true)"), std::string::npos);
     EXPECT_NE(status.resultJson.find(R"("queueAvailable":true)"), std::string::npos);
     EXPECT_NE(status.resultJson.find(R"("botCount":3)"), std::string::npos);

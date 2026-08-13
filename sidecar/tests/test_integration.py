@@ -167,7 +167,7 @@ def responder(result: dict[str, Any]) -> Handler:
 
 STATUS_RESULT: dict[str, Any] = {
     "protocolSchemaVersion": 2,
-    "inspectionSchemaVersion": 2,
+    "inspectionSchemaVersion": 3,
     "moduleEnabled": True,
     "queueAvailable": True,
     "queueSize": 3,
@@ -213,6 +213,9 @@ class TestHappyPath:
         assert result.identity.name == "Grimtusk"
         assert result.finance.money_copper == 123_456_789
         assert result.economy.outcome == "operation"
+        assert result.travel.destination.title == "Botanist Tyniarrel"
+        assert result.travel.route.next_point.map_id == 530
+        assert result.travel.last_movement.priority == "forced"
 
     def test_check_reports_the_match_and_the_snapshot_it_was_evaluated_against(self) -> None:
         payload = {"matched": True, "condition": "action", "snapshot": inspection_payload()}

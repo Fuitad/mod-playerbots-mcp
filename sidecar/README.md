@@ -8,7 +8,8 @@ The C++ server listens only on `127.0.0.1`. Every request uses wire schema versi
 `PlayerbotsMCP.Port` from `mod_playerbots_mcp.conf`.
 
 The sidecar exposes status, bot listing, inspection, loop anomaly inspection, bounded waits, command dispatch, and
-guarded homebind recovery. Tests use a test owned loopback server and never contact a live worldserver.
+guarded homebind recovery. Inspection schema version 3 includes typed read only travel route and last movement
+diagnostics. Tests use a test owned loopback server and never contact a live worldserver.
 
 ## Development
 

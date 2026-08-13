@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from pydantic.alias_generators import to_camel
 
 SCHEMA_VERSION = 2
-INSPECTION_SCHEMA_VERSION = 2
+INSPECTION_SCHEMA_VERSION = 3
 FRAME_HEADER_BYTES = 4
 MAX_FRAME_PAYLOAD_BYTES = 64 * 1024
 MAX_RESPONSE_PAYLOAD_BYTES = 60 * 1024
@@ -440,6 +440,45 @@ class Transport(WireModel):
     entry: int
 
 
+class TravelPoint(WireModel):
+    available: bool
+    map_id: int
+    x: float
+    y: float
+    z: float
+    distance_yards: float
+
+
+class TravelDestination(WireModel):
+    type: str
+    title: str
+    distance_yards: float
+
+
+class TravelRoute(WireModel):
+    point_count: int
+    next_path_type: Literal["none", "walk", "portal", "transport", "flight_path", "teleport_spell"]
+    next_entry: int
+    next_point: TravelPoint
+
+
+class LastMovement(WireModel):
+    point: TravelPoint
+    age_ms: int
+    delay_ms: int
+    priority: Literal["idle", "wander", "normal", "combat", "forced"]
+
+
+class Travel(WireModel):
+    available: bool
+    status: Literal["unavailable", "none", "prepare", "travel", "work", "cooldown", "expired", "unknown"]
+    destination: TravelDestination
+    forced: bool
+    can_move: bool
+    route: TravelRoute
+    last_movement: LastMovement
+
+
 class ActionAttempt(WireModel):
     sequence: int
     timestamp_ms: int
@@ -566,6 +605,7 @@ class InspectResult(WireModel):
     group: GroupSummary
     position: Position
     transport: Transport
+    travel: Travel
     action: ActionSection
     finance: Finance
     career: Career

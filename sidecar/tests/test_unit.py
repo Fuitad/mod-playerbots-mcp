@@ -264,7 +264,7 @@ class TestStrictModels:
             StatusResult.model_validate(
                 {
                     "protocolSchemaVersion": 2,
-                    "inspectionSchemaVersion": 2,
+                    "inspectionSchemaVersion": 3,
                     "moduleEnabled": "true",
                     "queueAvailable": True,
                     "queueSize": 0,

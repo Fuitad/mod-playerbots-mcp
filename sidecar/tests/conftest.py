@@ -54,7 +54,7 @@ def latest_attempt(
 def inspection_payload(**overrides: Any) -> dict[str, Any]:
     """Builds a complete verification inspection exactly as the C++ serializer emits it."""
     payload: dict[str, Any] = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "ok": True,
         "identity": {
             "guid": "0x0000000000000003",
@@ -89,6 +89,43 @@ def inspection_payload(**overrides: Any) -> dict[str, Any]:
             "movementState": "moving",
         },
         "transport": {"attached": False, "guid": "", "entry": 0},
+        "travel": {
+            "available": True,
+            "status": "travel",
+            "destination": {
+                "type": "RpgTravelDestination",
+                "title": "Botanist Tyniarrel",
+                "distanceYards": 311.18,
+            },
+            "forced": True,
+            "canMove": True,
+            "route": {
+                "pointCount": 8,
+                "nextPathType": "walk",
+                "nextEntry": 0,
+                "nextPoint": {
+                    "available": True,
+                    "mapId": 530,
+                    "x": 8704.0,
+                    "y": -6620.0,
+                    "z": 72.5,
+                    "distanceYards": 18.9,
+                },
+            },
+            "lastMovement": {
+                "point": {
+                    "available": True,
+                    "mapId": 530,
+                    "x": 8703.0,
+                    "y": -6639.0,
+                    "z": 72.7,
+                    "distanceYards": 0.2,
+                },
+                "ageMs": 5100,
+                "delayMs": 5000,
+                "priority": "forced",
+            },
+        },
         "action": {
             "lastExecutedAction": "melee",
             "latestAttempt": latest_attempt(7, "melee"),

@@ -11,6 +11,21 @@ anomaly reads, and guarded homebind recovery. The Python sidecar exposes those o
 The server reads inspection data from mod-playerbots-telemetry and delegates intervention state to
 mod-playerbots-recovery. It does not store MCP transport or protocol code in mod-playerbots.
 
+## Travel diagnostics
+
+`inspect_bot` includes a typed `travel` section in inspection schema version 3. It is read only and reports the
+ordinary Playerbot travel state that already exists on the world thread.
+
+* `status`, `destination`, `forced`, and `canMove` describe the active travel target and whether the bot can move.
+* `route.pointCount` reports the retained route size.
+* `route.nextPathType`, `route.nextEntry`, and `route.nextPoint` report the next point selected by the ordinary travel
+  route logic. An unavailable next point is explicit through `nextPoint.available`.
+* `lastMovement` reports the last issued movement point, its age, its requested delay, and its priority.
+
+These fields diagnose route selection and movement stalls. They do not select a destination, move a bot, clear a
+route, or otherwise change game state. Coordinates and distances are observations from the current snapshot and can
+change on the next world update.
+
 ## Dependencies
 
 * A Playerbot compatible AzerothCore checkout
