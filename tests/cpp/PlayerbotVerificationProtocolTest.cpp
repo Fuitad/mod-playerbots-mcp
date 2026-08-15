@@ -5,6 +5,7 @@
  */
 
 #include <atomic>
+#include <barrier>
 #include <boost/asio.hpp>
 #include <chrono>
 #include <cstdlib>
@@ -542,4 +543,40 @@ TEST(PlayerbotVerificationProtocolTest, StopReleasesIdleAcceptAndJoinsWithinDead
     std::future<void> stopped = std::async(std::launch::async, [&server] { server.Stop(); });
     EXPECT_EQ(stopped.wait_for(std::chrono::seconds(2)), std::future_status::ready);
     EXPECT_FALSE(server.IsRunning());
+}
+
+TEST(PlayerbotVerificationProtocolTest, StopDuringActiveResponseJoinsWithoutCrashing)
+{
+    EnvironmentValueGuard guard("PLAYERBOT_VERIFICATION_TOKEN");
+    setenv("PLAYERBOT_VERIFICATION_TOKEN", TEST_TOKEN.c_str(), 1);
+
+    for (uint32 iteration = 0; iteration < 200; ++iteration)
+    {
+        std::barrier responseReady(2);
+        PlayerbotVerificationServer server(
+            [&responseReady](Request const&)
+            {
+                responseReady.arrive_and_wait();
+                return Response::Success(R"({"ready":true})");
+            });
+        uint16 const port = ReserveLoopbackPort();
+        ASSERT_TRUE(server.Start(port));
+
+        std::future<void> exchange = std::async(std::launch::async,
+                                                [port]
+                                                {
+                                                    try
+                                                    {
+                                                        Exchange(port, StatusRequest());
+                                                    }
+                                                    catch (...)
+                                                    {
+                                                    }
+                                                });
+        responseReady.arrive_and_wait();
+        server.Stop();
+
+        EXPECT_EQ(exchange.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+        EXPECT_FALSE(server.IsRunning());
+    }
 }

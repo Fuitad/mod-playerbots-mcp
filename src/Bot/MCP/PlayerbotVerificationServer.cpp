@@ -117,6 +117,22 @@ struct PlayerbotVerificationServer::Impl
 
     void EmitAudit(RecoveryAuditRecord const& record) { auditSink(SerializeRecoveryAuditRecord(record)); }
 
+    bool AcceptConnection(tcp::socket& socket, boost::system::error_code& error)
+    {
+        bool completed = false;
+
+        io.restart();
+        acceptor->async_accept(
+            socket,
+            [&](boost::system::error_code const& acceptError)
+            {
+                error = acceptError;
+                completed = true;
+            });
+        io.run();
+        return completed && !error;
+    }
+
     void HandleConnection(tcp::socket& socket)
     {
         std::array<uint8, FRAME_HEADER_BYTES> header{};
@@ -198,8 +214,7 @@ struct PlayerbotVerificationServer::Impl
             }
 
             boost::system::error_code error;
-            acceptor->accept(*socket, error);
-            if (error)
+            if (!AcceptConnection(*socket, error) || stopping.load())
                 break;
 
             HandleConnection(*socket);
@@ -288,9 +303,16 @@ void PlayerbotVerificationServer::Stop()
 {
     SetPlayerbotVerificationAcceptingRequests(false);
     impl->stopping.store(true);
-    impl->AbortNetwork();
     if (impl->worker.joinable())
+    {
+        boost::asio::post(impl->io, [serverImpl = impl.get()] { serverImpl->AbortNetwork(); });
         impl->worker.join();
+
+        // Drain a stop posted before the worker entered its event loop. All descriptor operations
+        // still happen after the worker is gone, so no Asio object is mutated concurrently.
+        impl->io.restart();
+        impl->io.poll();
+    }
 
     std::lock_guard<std::mutex> lock(impl->stateMutex);
     impl->activeSocket.reset();
