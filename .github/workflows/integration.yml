@@ -11,7 +11,7 @@ jobs:
       - name: Check out Playerbot compatible AzerothCore
         uses: actions/checkout@v7.0.1
         with:
-          repository: mod-playerbots/azerothcore-wotlk
+          repository: Fuitad/azerothcore-wotlk
           ref: Playerbot
           path: core
 
