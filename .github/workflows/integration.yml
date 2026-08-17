@@ -13,6 +13,7 @@ jobs:
         with:
           repository: Fuitad/azerothcore-wotlk
           ref: Playerbot
+          token: ${{ secrets.CORE_REPO_TOKEN }}
           path: core
 
       - name: Check out public Playerbots fork
