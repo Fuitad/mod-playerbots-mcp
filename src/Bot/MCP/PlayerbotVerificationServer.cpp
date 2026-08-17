@@ -122,13 +122,12 @@ struct PlayerbotVerificationServer::Impl
         bool completed = false;
 
         io.restart();
-        acceptor->async_accept(
-            socket,
-            [&](boost::system::error_code const& acceptError)
-            {
-                error = acceptError;
-                completed = true;
-            });
+        acceptor->async_accept(socket,
+                               [&](boost::system::error_code const& acceptError)
+                               {
+                                   error = acceptError;
+                                   completed = true;
+                               });
         io.run();
         return completed && !error;
     }
