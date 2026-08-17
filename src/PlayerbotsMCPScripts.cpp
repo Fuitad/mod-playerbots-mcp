@@ -24,6 +24,12 @@ public:
 
     void OnBeforeWorldInitialized() override
     {
+        if (!sPlayerbotMCPConfig.enable)
+        {
+            LOG_INFO("server.loading", "Playerbots MCP server disabled by PlayerbotsMCP.Enable = 0");
+            return;
+        }
+
         if (!sPlayerbotMCPConfig.port)
             return;
 

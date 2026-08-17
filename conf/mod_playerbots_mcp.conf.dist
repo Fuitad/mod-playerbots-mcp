@@ -1,4 +1,8 @@
 [worldserver]
 
+# Master switch for the module. Zero keeps the verification server off
+# regardless of the configured port.
+PlayerbotsMCP.Enable = 1
+
 # Loopback verification listener port. Zero disables the server.
 PlayerbotsMCP.Port = 0

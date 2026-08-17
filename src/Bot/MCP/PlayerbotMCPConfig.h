@@ -15,6 +15,7 @@
 
 struct PlayerbotMCPSettings
 {
+    bool enable = true;
     std::uint32_t port = 0;
 };
 
@@ -22,6 +23,14 @@ template <class Lookup>
 PlayerbotMCPSettings LoadPlayerbotMCPSettings(Lookup&& lookup)
 {
     PlayerbotMCPSettings settings;
+    if (std::optional<std::string> const enable = lookup("PlayerbotsMCP.Enable"); enable && !enable->empty())
+    {
+        std::uint32_t parsed = 0;
+        auto const result = std::from_chars(enable->data(), enable->data() + enable->size(), parsed);
+        if (result.ec == std::errc() && result.ptr == enable->data() + enable->size())
+            settings.enable = parsed != 0;
+    }
+
     std::optional<std::string> const value = lookup("PlayerbotsMCP.Port");
     if (!value || value->empty())
         return settings;
