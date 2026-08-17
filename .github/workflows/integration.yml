@@ -58,6 +58,20 @@ jobs:
               modules/mod-playerbots/patches/azerothcore-playerbot-test-harness.patch
           fi
 
+      - name: Install build dependencies
+        run: |
+          sudo apt update
+          sudo apt remove needrestart
+          sudo apt-get -y install ccache clang cmake curl \
+            make unzip build-essential cmake-data \
+            libboost-all-dev libbz2-dev libmysql++-dev \
+            libreadline6-dev libssl-dev libtool openssl zlib1g-dev
+          if [[ "$(lsb_release -sr)" == "26.04" ]]; then
+            sudo apt-get -y install libgoogle-perftools-dev default-libmysqlclient-dev libstdc++-16-dev
+          else
+            sudo apt-get -y install google-perftools libmysqlclient-dev libncurses5-dev
+          fi
+
       - name: Configure AzerothCore
         run: >-
           cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release
