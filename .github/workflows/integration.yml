@@ -54,7 +54,7 @@ jobs:
         run: |
           if ! grep -q 'target_link_libraries(unit_tests modules scripts)' core/src/test/CMakeLists.txt ||
              ! grep -q 'GetPlayerbotsDBRevision' core/src/test/mocks/WorldMock.h; then
-            git -C core apply \\
+            git -C core apply \
               modules/mod-playerbots/patches/azerothcore-playerbot-test-harness.patch
           fi
 
