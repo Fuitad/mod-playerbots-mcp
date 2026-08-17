@@ -465,7 +465,7 @@ Response BuildListResponse(Request const& request)
         AppendJsonString(out, master ? master->GetGUID().ToString() : std::string());
         out << ",\"name\":";
         AppendJsonString(out, master ? master->GetName() : std::string());
-        out << ",\"relationshipValid\":" << (botAI->HasRealPlayerMaster() ? "true" : "false") << '}';
+        out << ",\"relationshipValid\":" << (botAI->HasGameClientMaster() ? "true" : "false") << '}';
         out << ",\"mapId\":" << bot->GetMapId();
         out << ",\"transportAttached\":" << (bot->GetTransport() ? "true" : "false") << '}';
     }
