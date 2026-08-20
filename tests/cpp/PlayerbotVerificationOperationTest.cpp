@@ -85,6 +85,12 @@ protected:
         for (TestPlayer* player : registeredPlayers)
         {
             sPlayerbotsMgr.RemovePlayerBotData(player->GetGUID(), true);
+
+            // What production does when a bot goes away (PlayerbotsTelemetryScripts.cpp:71). The
+            // store is global and keyed by guid, so without this a test's action history and
+            // economy sequence outlive it and become the next test's starting baseline.
+            GetPlayerbotTelemetryStateStore().Erase(player->GetGUID().GetCounter());
+
             ObjectAccessor::RemoveObject(static_cast<Player*>(player));
         }
         registeredPlayers.clear();
@@ -101,6 +107,12 @@ protected:
     TestPlayer* AddRealPlayer(ObjectGuid::LowType guid, std::string const& name)
     {
         TestPlayer* player = CreateTestPlayer(guid, name);
+
+        // Cleaning up on the way out is not enough on its own: any suite sharing these guids could
+        // leave state behind. Claiming the guid clears it, so a test's baseline is its own no
+        // matter what ran before it or in which order the runner chose to run it.
+        GetPlayerbotTelemetryStateStore().Erase(guid);
+
         ObjectAccessor::AddObject(static_cast<Player*>(player));
         registeredPlayers.push_back(player);
         return player;
@@ -513,6 +525,28 @@ TEST_F(PlayerbotVerificationOperationTest, TypedErrorsDistinguishMissingBotMissi
     EXPECT_EQ(DispatchWithPump(SimpleRequest(Operation::Inspect, 999)).error.code, ErrorCode::BotNotFound);
     EXPECT_EQ(DispatchWithPump(CommandRequest(3, 999, "follow")).error.code, ErrorCode::MasterNotFound);
     EXPECT_EQ(DispatchWithPump(CommandRequest(3, 4, "follow")).error.code, ErrorCode::MasterIsBot);
+}
+
+/*
+ * The isolation guard itself, asserted rather than left to the runner's ordering.
+ *
+ * Every other test in this suite reads absolute counters (`baseline == 2`, `"sequence":1`), which
+ * only hold if the guid it claims carries no state from an earlier test. This one dirties the
+ * global store deliberately and then claims the guid, so deleting the erase in AddRealPlayer fails
+ * here immediately and in any order, instead of surfacing later as an unrelated test failing under
+ * --gtest_shuffle. The matching erase in TearDown cannot be asserted from inside a test, since no
+ * test observes another's teardown; this covers the half that is observable.
+ */
+TEST_F(PlayerbotVerificationOperationTest, AClaimedGuidCarriesNoVerificationStateFromAnEarlierTest)
+{
+    constexpr ObjectGuid::LowType REUSED_GUID = 3;
+
+    GetPlayerbotTelemetryStateStore().Get(REUSED_GUID)->verification.RecordActionAttempt("follow", true, 10);
+    ASSERT_EQ(GetPlayerbotTelemetryStateStore().Get(REUSED_GUID)->verification.CopyActionHistory().totalCount, 1U);
+
+    ASSERT_NE(AddRealPlayer(REUSED_GUID, "VerificationBot"), nullptr);
+
+    EXPECT_EQ(GetPlayerbotTelemetryStateStore().Get(REUSED_GUID)->verification.CopyActionHistory().totalCount, 0U);
 }
 
 TEST_F(PlayerbotVerificationOperationTest, DispatchedCommandReportsBaselineWithoutClaimingAcceptance)
