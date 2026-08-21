@@ -80,6 +80,10 @@ ProtocolError MakeError(ErrorCode code)
             return {code, "The master must be a real player."};
         case ErrorCode::InvalidRelationship:
             return {code, "The master relationship is invalid."};
+        case ErrorCode::InvalidSkill:
+            return {code, "The skill value or maximum is invalid."};
+        case ErrorCode::GameObjectNotFound:
+            return {code, "No spawned gameobject with that entry exists on the bot's map."};
         case ErrorCode::InternalError:
             return {code, "The operation failed internally."};
         case ErrorCode::None:
@@ -705,6 +709,10 @@ char const* PlayerbotVerification::ErrorCodeName(ErrorCode code)
             return "master_is_bot";
         case ErrorCode::InvalidRelationship:
             return "invalid_relationship";
+        case ErrorCode::InvalidSkill:
+            return "invalid_skill";
+        case ErrorCode::GameObjectNotFound:
+            return "gameobject_not_found";
         case ErrorCode::InternalError:
             return "internal_error";
     }
@@ -1145,6 +1153,37 @@ RequestParseResult PlayerbotVerification::ParseRequestPayload(std::string const&
         request.operation = Operation::Recover;
         request.botGuid = static_cast<uint32>(*botGuid);
         request.destination = std::move(*destination);
+        return {.request = std::move(request)};
+    }
+    if (*operationName == "set_skill")
+    {
+        if (!HasExactFields(*fields, CommonFields({"botGuid", "skillId", "value", "maximum"})))
+            return {.error = MakeError(ErrorCode::MalformedRequest)};
+        std::optional<uint64> botGuid = UnsignedField(*fields, "botGuid");
+        if (!botGuid || !IsValidGuid(*botGuid))
+            return {.error = MakeError(ErrorCode::InvalidGuid)};
+        if (!StoreUInt32(request, *fields, "skillId") || !StoreUInt32(request, *fields, "value") ||
+            !StoreUInt32(request, *fields, "maximum"))
+            return {.error = MakeError(ErrorCode::InvalidSkill)};
+        uint64 const value = request.numbers["value"];
+        uint64 const maximum = request.numbers["maximum"];
+        if (maximum > MAX_SKILL_MAXIMUM || maximum % SKILL_RANK_STEP != 0 || value > maximum)
+            return {.error = MakeError(ErrorCode::InvalidSkill)};
+        request.operation = Operation::SetSkill;
+        request.botGuid = static_cast<uint32>(*botGuid);
+        return {.request = std::move(request)};
+    }
+    if (*operationName == "teleport_to_gameobject")
+    {
+        if (!HasExactFields(*fields, CommonFields({"botGuid", "gameObjectEntry"})))
+            return {.error = MakeError(ErrorCode::MalformedRequest)};
+        std::optional<uint64> botGuid = UnsignedField(*fields, "botGuid");
+        if (!botGuid || !IsValidGuid(*botGuid))
+            return {.error = MakeError(ErrorCode::InvalidGuid)};
+        if (!StoreUInt32(request, *fields, "gameObjectEntry"))
+            return {.error = MakeError(ErrorCode::GameObjectNotFound)};
+        request.operation = Operation::TeleportToGameObject;
+        request.botGuid = static_cast<uint32>(*botGuid);
         return {.request = std::move(request)};
     }
     if (*operationName == "check")

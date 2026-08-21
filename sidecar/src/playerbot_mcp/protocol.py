@@ -56,6 +56,8 @@ class ErrorCode(StrEnum):
     MASTER_NOT_FOUND = "master_not_found"
     MASTER_IS_BOT = "master_is_bot"
     INVALID_RELATIONSHIP = "invalid_relationship"
+    INVALID_SKILL = "invalid_skill"
+    GAMEOBJECT_NOT_FOUND = "gameobject_not_found"
     INTERNAL_ERROR = "internal_error"
 
 
@@ -173,6 +175,36 @@ class CommandRequest(VerificationRequest):
     bot_guid: int = Field(ge=1, le=UINT32_MAX)
     master_guid: int = Field(ge=1, le=UINT32_MAX)
     command: str = Field(min_length=1)
+
+
+SKILL_RANK_STEP = 75
+MAX_SKILL_MAXIMUM = 450
+
+
+class SetSkillRequest(VerificationRequest):
+    """Verification staging: overwrite one skill the bot already knows."""
+
+    operation: ClassVar[str] = "set_skill"
+
+    bot_guid: int = Field(ge=1, le=UINT32_MAX)
+    skill_id: int = Field(ge=1, le=UINT32_MAX)
+    value: int = Field(ge=1, le=MAX_SKILL_MAXIMUM)
+    maximum: int = Field(ge=SKILL_RANK_STEP, le=MAX_SKILL_MAXIMUM, multiple_of=SKILL_RANK_STEP)
+
+    @model_validator(mode="after")
+    def _value_within_maximum(self) -> SetSkillRequest:
+        if self.value > self.maximum:
+            raise ValueError("value must not exceed maximum.")
+        return self
+
+
+class TeleportToGameObjectRequest(VerificationRequest):
+    """Verification staging: park the bot beside the nearest spawned gameobject of one entry."""
+
+    operation: ClassVar[str] = "teleport_to_gameobject"
+
+    bot_guid: int = Field(ge=1, le=UINT32_MAX)
+    game_object_entry: int = Field(ge=1, le=UINT32_MAX)
 
 
 class RecoverRequest(VerificationRequest):
@@ -630,6 +662,23 @@ class CommandResult(WireModel):
     command: str
     baseline_action_sequence: int
     baseline_economy_sequence: int
+
+
+class SetSkillResult(WireModel):
+    bot_guid: str
+    skill_id: int
+    previous_value: int
+    previous_maximum: int
+    value: int
+    maximum: int
+
+
+class TeleportToGameObjectResult(WireModel):
+    bot_guid: str
+    game_object_entry: int
+    spawn_id: int
+    map_id: int
+    distance_before: float
 
 
 class RecoveryOutcome(StrEnum):

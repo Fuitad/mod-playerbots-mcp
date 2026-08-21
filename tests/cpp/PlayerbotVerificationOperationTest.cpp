@@ -592,6 +592,59 @@ TEST_F(PlayerbotVerificationOperationTest, RejectedCommandLeavesActionBaselineUn
     EXPECT_EQ(VerificationState(botAI).CopySnapshot(), before);
 }
 
+TEST_F(PlayerbotVerificationOperationTest, SetSkillOverwritesOnlyAKnownSkillAndReportsTheChange)
+{
+    constexpr uint16 MINING = 186;
+    if (!sSkillLineStore.LookupEntry(MINING))
+    {
+        auto* skill = new SkillLineEntry{};
+        skill->id = MINING;
+        sSkillLineStore.SetEntry(MINING, skill);
+    }
+    TestPlayer* master = AddRealPlayer(1, "VerificationMaster");
+    TestPlayer* bot = AddRealPlayer(3, "VerificationBot");
+    ASSERT_NE(AddBot(bot, master), nullptr);
+
+    Request request;
+    request.requestId = 4;
+    request.operation = Operation::SetSkill;
+    request.botGuid = 3;
+    request.numbers = {{"skillId", MINING}, {"value", 150}, {"maximum", 150}};
+
+    // The bot never learned Mining, so the staging tool refuses rather than granting a profession.
+    EXPECT_EQ(DispatchWithPump(request).error.code, ErrorCode::InvalidSkill);
+    EXPECT_FALSE(bot->HasSkill(MINING));
+
+    bot->SetSkill(MINING, 1, 12, 75);
+    Response const response = DispatchWithPump(request);
+    ASSERT_TRUE(response.ok) << response.error.message;
+    EXPECT_EQ(bot->GetPureSkillValue(MINING), 150);
+    EXPECT_EQ(bot->GetPureMaxSkillValue(MINING), 150);
+    EXPECT_EQ(bot->GetSkillStep(MINING), 2);
+    EXPECT_NE(response.resultJson.find(R"("previousValue":12)"), std::string::npos);
+    EXPECT_NE(response.resultJson.find(R"("previousMaximum":75)"), std::string::npos);
+    EXPECT_NE(response.resultJson.find(R"("value":150)"), std::string::npos);
+
+    request.botGuid = 999;
+    EXPECT_EQ(DispatchWithPump(request).error.code, ErrorCode::BotNotFound);
+}
+
+TEST_F(PlayerbotVerificationOperationTest, TeleportToGameObjectRefusesWhenNoSpawnOfTheEntryExists)
+{
+    TestPlayer* master = AddRealPlayer(1, "VerificationMaster");
+    TestPlayer* bot = AddRealPlayer(3, "VerificationBot");
+    ASSERT_NE(AddBot(bot, master), nullptr);
+
+    Request request;
+    request.requestId = 5;
+    request.operation = Operation::TeleportToGameObject;
+    request.botGuid = 3;
+    request.numbers = {{"gameObjectEntry", 1731}};
+    EXPECT_EQ(DispatchWithPump(request).error.code, ErrorCode::GameObjectNotFound);
+    request.botGuid = 999;
+    EXPECT_EQ(DispatchWithPump(request).error.code, ErrorCode::BotNotFound);
+}
+
 TEST_F(PlayerbotVerificationOperationTest, ShutdownQueueFullAndTimeoutProduceDistinctErrors)
 {
     TestPlayer* master = AddRealPlayer(1, "VerificationMaster");

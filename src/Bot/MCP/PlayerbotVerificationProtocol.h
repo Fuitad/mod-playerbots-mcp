@@ -27,6 +27,9 @@ inline constexpr std::size_t MIN_TOKEN_BYTES = 32;
 inline constexpr std::size_t TOKEN_DIGEST_BYTES = 32;
 inline constexpr uint32 MAX_LIST_LIMIT = 100;
 inline constexpr uint32 MAX_ANOMALY_LIMIT = 50;
+// Profession rank caps are multiples of 75 up to Grand Master (450); SetSkill derives the step from it.
+inline constexpr uint32 SKILL_RANK_STEP = 75;
+inline constexpr uint32 MAX_SKILL_MAXIMUM = 450;
 
 enum class ErrorCode
 {
@@ -54,6 +57,8 @@ enum class ErrorCode
     MasterNotFound,
     MasterIsBot,
     InvalidRelationship,
+    InvalidSkill,
+    GameObjectNotFound,
     InternalError
 };
 
@@ -82,7 +87,9 @@ enum class Operation
     Anomalies,
     Check,
     Command,
-    Recover
+    Recover,
+    SetSkill,
+    TeleportToGameObject
 };
 
 enum class RecoveryDestination

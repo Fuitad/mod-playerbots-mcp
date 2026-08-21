@@ -36,8 +36,12 @@ from playerbot_mcp.protocol import (
     RecoverRequest,
     RecoveryResult,
     ServerError,
+    SetSkillRequest,
+    SetSkillResult,
     StatusRequest,
     StatusResult,
+    TeleportToGameObjectRequest,
+    TeleportToGameObjectResult,
     VerificationConnectionError,
     VerificationError,
     VerificationRequest,
@@ -106,7 +110,7 @@ class VerificationSettings(BaseModel):
 
 
 class VerificationClient:
-    """Typed client for the seven verification operations."""
+    """Typed client for the nine verification operations."""
 
     def __init__(self, settings: VerificationSettings) -> None:
         self._settings = settings
@@ -133,6 +137,16 @@ class VerificationClient:
         """Dispatches a command. A success here means dispatched, never accepted by the bot."""
         request = CommandRequest(bot_guid=bot_guid, master_guid=master_guid, command=command)
         return self._call(request, CommandResult)
+
+    def set_skill(self, *, bot_guid: int, skill_id: int, value: int, maximum: int) -> SetSkillResult:
+        """Verification staging: overwrite one skill the bot already knows."""
+        request = SetSkillRequest(bot_guid=bot_guid, skill_id=skill_id, value=value, maximum=maximum)
+        return self._call(request, SetSkillResult)
+
+    def teleport_to_gameobject(self, *, bot_guid: int, game_object_entry: int) -> TeleportToGameObjectResult:
+        """Verification staging: park the bot beside the nearest spawned gameobject of one entry."""
+        request = TeleportToGameObjectRequest(bot_guid=bot_guid, game_object_entry=game_object_entry)
+        return self._call(request, TeleportToGameObjectResult)
 
     def recover(self, *, bot_guid: int, timeout: float | None = None) -> RecoveryResult:
         """Request one exact online managed Playerbot's authoritative homebind."""

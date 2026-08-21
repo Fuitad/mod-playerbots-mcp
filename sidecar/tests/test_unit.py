@@ -211,6 +211,56 @@ class TestRequestPayloads:
         with pytest.raises(ValidationError):
             model(**kwargs)
 
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"bot_guid": 3, "skill_id": 186, "value": 76, "maximum": 75},
+            {"bot_guid": 3, "skill_id": 186, "value": 1, "maximum": 80},
+            {"bot_guid": 3, "skill_id": 186, "value": 1, "maximum": 525},
+            {"bot_guid": 3, "skill_id": 0, "value": 1, "maximum": 75},
+            {"bot_guid": 3, "skill_id": 186, "value": 0, "maximum": 75},
+        ],
+    )
+    def test_a_skill_staging_request_the_server_would_refuse_is_refused_client_side(
+        self, kwargs: dict[str, int]
+    ) -> None:
+        from playerbot_mcp.protocol import SetSkillRequest
+
+        with pytest.raises(ValidationError):
+            SetSkillRequest(**kwargs)
+
+    def test_staging_requests_emit_the_exact_server_shapes(self) -> None:
+        from playerbot_mcp.protocol import SetSkillRequest, TeleportToGameObjectRequest
+
+        skill = json.loads(
+            build_request_payload(
+                SetSkillRequest(bot_guid=3, skill_id=186, value=75, maximum=75), request_id=6, token=TOKEN
+            )
+        )
+        assert skill == {
+            "schemaVersion": SCHEMA_VERSION,
+            "requestId": 6,
+            "token": TOKEN,
+            "operation": "set_skill",
+            "botGuid": 3,
+            "skillId": 186,
+            "value": 75,
+            "maximum": 75,
+        }
+        teleport = json.loads(
+            build_request_payload(
+                TeleportToGameObjectRequest(bot_guid=3, game_object_entry=1731), request_id=7, token=TOKEN
+            )
+        )
+        assert teleport == {
+            "schemaVersion": SCHEMA_VERSION,
+            "requestId": 7,
+            "token": TOKEN,
+            "operation": "teleport_to_gameobject",
+            "botGuid": 3,
+            "gameObjectEntry": 1731,
+        }
+
     def test_a_map_check_accepts_map_zero_because_the_server_does(self) -> None:
         payload = json.loads(build_request_payload(MapCheck(bot_guid=3, map_id=0), request_id=4, token=TOKEN))
         assert payload["mapId"] == 0
@@ -476,7 +526,7 @@ class TestToolSurface:
         return build_server(VerificationClient(settings))
 
     @pytest.mark.anyio
-    async def test_exactly_the_seven_planned_tools_are_exposed(self) -> None:
+    async def test_exactly_the_nine_planned_tools_are_exposed(self) -> None:
         async with Client(self._server()) as client:
             listed = await client.list_tools()
         assert {tool.name for tool in listed.tools} == {
@@ -486,6 +536,8 @@ class TestToolSurface:
             "inspect_bot_loops",
             "wait_for_bot",
             "send_bot_command",
+            "set_bot_skill",
+            "teleport_bot_to_gameobject",
             "recover_bot",
         }
 

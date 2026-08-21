@@ -1,8 +1,9 @@
 """MCP tool surface over the verification client.
 
 Five read tools carry the read only annotation so Codex can call them without a write prompt.
-`send_bot_command` and `recover_bot` are mutating. Recovery is idempotent and is limited to one
-exact online managed Playerbot's authoritative homebind.
+`send_bot_command`, `set_bot_skill`, `teleport_bot_to_gameobject`, and `recover_bot` are mutating.
+Recovery is idempotent and is limited to one exact online managed Playerbot's authoritative homebind.
+The two staging tools exist for verification scenarios that would otherwise wait on the game clock.
 
 The server holds no game rules. It validates inputs, forwards them, and reports what the
 authoritative C++ side said. A dispatch result means the bridge sent the command, never that
@@ -41,7 +42,11 @@ from playerbot_mcp.protocol import (
     RecoveryReason,
     RecoveryResult,
     ServerError,
+    SetSkillRequest,
+    SetSkillResult,
     StatusResult,
+    TeleportToGameObjectRequest,
+    TeleportToGameObjectResult,
     VerificationConnectionError,
     VerificationError,
     VerificationTimeoutError,
@@ -450,6 +455,36 @@ def build_server(client: VerificationClient) -> MCPServer:
             raise ValueError("master_guid is not the bot's current real player master.")
         return await anyio.to_thread.run_sync(
             partial(client.command, bot_guid=bot_guid, master_guid=master_guid, command=command)
+        )
+
+    @server.tool(
+        annotations=IDEMPOTENT_MUTATING,
+        description=(
+            "Verification staging: overwrite one skill the bot already knows (value and rank cap). "
+            "Refuses skills the bot never learned. Use it to stage a capped gatherer or a grey node "
+            "scenario without waiting for it to happen naturally, and restore the previous values "
+            "from the result afterwards."
+        ),
+    )
+    async def set_bot_skill(bot_guid: int, skill_id: int, value: int, maximum: int) -> SetSkillResult:
+        SetSkillRequest(bot_guid=bot_guid, skill_id=skill_id, value=value, maximum=maximum)
+        return await anyio.to_thread.run_sync(
+            partial(client.set_skill, bot_guid=bot_guid, skill_id=skill_id, value=value, maximum=maximum)
+        )
+
+    @server.tool(
+        annotations=MUTATING,
+        description=(
+            "Verification staging: teleport one online bot beside the nearest currently spawned "
+            "gameobject of the given entry on its own map (for example 1731 for a Copper Vein). "
+            "Resets the bot's stuck state like recover_bot does. Fails with gameobject_not_found "
+            "when no spawn of that entry is active on the map."
+        ),
+    )
+    async def teleport_bot_to_gameobject(bot_guid: int, game_object_entry: int) -> TeleportToGameObjectResult:
+        TeleportToGameObjectRequest(bot_guid=bot_guid, game_object_entry=game_object_entry)
+        return await anyio.to_thread.run_sync(
+            partial(client.teleport_to_gameobject, bot_guid=bot_guid, game_object_entry=game_object_entry)
         )
 
     @server.tool(

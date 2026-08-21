@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <sstream>
@@ -25,7 +26,9 @@
 #include "CharacterCache.h"
 #include "DBCStores.h"
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
 #include "PlayerbotAIConfig.h"
+#include "PoolMgr.h"
 #include "Script/Playerbots.h"
 #include "Script/WorldThr/PlayerbotWorldThreadProcessor.h"
 #include "SharedDefines.h"
@@ -620,6 +623,83 @@ Response BuildCommandResponse(Request const& request)
     out << ",\"baselineEconomySequence\":" << baseline.economy.sequence << '}';
     return Response::Success(out.str());
 }
+
+// Verification tooling: overwrite one already known skill so a scenario (capped gatherer, grey node)
+// can be staged without waiting for the bot to reach it naturally. Unknown skills are refused so the
+// tool cannot hand a bot a profession its career never planned.
+Response BuildSetSkillResponse(Request const& request)
+{
+    Player* bot = ObjectAccessor::FindPlayer(MakePlayerGuid(request.botGuid));
+    PlayerbotAI* botAI = ResolveBotAI(bot);
+    if (!botAI)
+        return Response::Failure(ErrorCode::BotNotFound, {});
+
+    auto const skillId = static_cast<uint16>(RequestNumber(request, "skillId"));
+    auto const value = static_cast<uint16>(RequestNumber(request, "value"));
+    auto const maximum = static_cast<uint16>(RequestNumber(request, "maximum"));
+    if (!bot->HasSkill(skillId))
+        return Response::Failure(ErrorCode::InvalidSkill, {});
+
+    uint16 const previousValue = bot->GetPureSkillValue(skillId);
+    uint16 const previousMaximum = bot->GetPureMaxSkillValue(skillId);
+    bot->SetSkill(skillId, static_cast<uint16>(maximum / SKILL_RANK_STEP), value, maximum);
+
+    std::ostringstream out;
+    out << "{\"botGuid\":";
+    AppendJsonString(out, bot->GetGUID().ToString());
+    out << ",\"skillId\":" << skillId << ",\"previousValue\":" << previousValue
+        << ",\"previousMaximum\":" << previousMaximum << ",\"value\":" << bot->GetPureSkillValue(skillId)
+        << ",\"maximum\":" << bot->GetPureMaxSkillValue(skillId) << '}';
+    return Response::Success(out.str());
+}
+
+// Verification tooling: park the bot beside the nearest currently spawned gameobject of one entry on
+// its own map, so a node interaction can be observed on demand. Pooled spawns that are not active are
+// skipped; the bot would otherwise arrive at an empty spawn point.
+Response BuildTeleportToGameObjectResponse(Request const& request)
+{
+    Player* bot = ObjectAccessor::FindPlayer(MakePlayerGuid(request.botGuid));
+    PlayerbotAI* botAI = ResolveBotAI(bot);
+    if (!botAI)
+        return Response::Failure(ErrorCode::BotNotFound, {});
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || bot->IsInCombat() || bot->isDead())
+        return Response::Failure(ErrorCode::BotUnavailable, {});
+
+    uint32 const entry = static_cast<uint32>(RequestNumber(request, "gameObjectEntry"));
+    GameObjectData const* nearest = nullptr;
+    float nearestDistance = 0.0f;
+    for (auto const& [spawnId, data] : sObjectMgr->GetAllGOData())
+    {
+        if (data.id != entry || data.mapid != bot->GetMapId())
+            continue;
+        if (sPoolMgr->IsPartOfAPool<GameObject>(spawnId) && !sPoolMgr->IsSpawnedObject<GameObject>(spawnId))
+            continue;
+        float const distance = bot->GetExactDist(data.posX, data.posY, data.posZ);
+        if (!nearest || distance < nearestDistance)
+        {
+            nearest = &data;
+            nearestDistance = distance;
+        }
+    }
+    if (!nearest)
+        return Response::Failure(ErrorCode::GameObjectNotFound, {});
+
+    PlayerbotRecoveryResetStuckState(botAI);
+    bot->m_taxi.ClearTaxiDestinations();
+    // Two yards in front of the node keeps the bot inside interaction range without standing in it.
+    float const x = nearest->posX + 2.0f * std::cos(nearest->orientation);
+    float const y = nearest->posY + 2.0f * std::sin(nearest->orientation);
+    bool const accepted = bot->TeleportTo(nearest->mapid, x, y, nearest->posZ, nearest->orientation);
+    if (!accepted)
+        return Response::Failure(ErrorCode::BotUnavailable, {});
+
+    std::ostringstream out;
+    out << "{\"botGuid\":";
+    AppendJsonString(out, bot->GetGUID().ToString());
+    out << ",\"gameObjectEntry\":" << entry << ",\"spawnId\":" << nearest->spawnId << ",\"mapId\":" << nearest->mapid
+        << ",\"distanceBefore\":" << nearestDistance << '}';
+    return Response::Success(out.str());
+}
 }  // namespace
 
 bool PlayerbotVerificationResult::TryClaim()
@@ -733,6 +813,10 @@ Response ExecuteVerificationOnWorldThread(Request const& request, PlayerbotRecov
             return BuildCommandResponse(request);
         case Operation::Recover:
             return BuildRecoverResponse(request, recoveryPersistence);
+        case Operation::SetSkill:
+            return BuildSetSkillResponse(request);
+        case Operation::TeleportToGameObject:
+            return BuildTeleportToGameObjectResponse(request);
     }
     return Response::Failure(ErrorCode::UnknownOperation, {});
 }

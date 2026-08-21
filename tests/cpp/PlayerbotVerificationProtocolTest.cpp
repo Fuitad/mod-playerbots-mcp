@@ -162,6 +162,49 @@ TEST(PlayerbotVerificationProtocolTest, StrictParserAcceptsOnlyHomebindRecovery)
     EXPECT_EQ(parsed.request->destination, "homebind");
 }
 
+TEST(PlayerbotVerificationProtocolTest, StrictParserAcceptsSkillAndGameObjectStagingShapesWithinTheirBounds)
+{
+    auto parse = [](std::string const& body)
+    {
+        return ParseRequestPayload(R"({"schemaVersion":2,"requestId":13,"token":")" + TEST_TOKEN + R"(",)" + body + '}',
+                                   TestTokenDigest());
+    };
+
+    RequestParseResult const skill =
+        parse(R"("operation":"set_skill","botGuid":42,"skillId":186,"value":75,"maximum":75)");
+    ASSERT_TRUE(skill.request);
+    EXPECT_EQ(skill.request->operation, Operation::SetSkill);
+    EXPECT_EQ(skill.request->botGuid, 42U);
+    EXPECT_EQ(skill.request->numbers.at("skillId"), 186U);
+    EXPECT_EQ(skill.request->numbers.at("value"), 75U);
+    EXPECT_EQ(skill.request->numbers.at("maximum"), 75U);
+
+    // A maximum that is not a rank cap, a value above it, or a zero skill are all refused before the
+    // world thread sees them.
+    EXPECT_EQ(parse(R"("operation":"set_skill","botGuid":42,"skillId":186,"value":76,"maximum":75)").error.code,
+              ErrorCode::InvalidSkill);
+    EXPECT_EQ(parse(R"("operation":"set_skill","botGuid":42,"skillId":186,"value":1,"maximum":80)").error.code,
+              ErrorCode::InvalidSkill);
+    EXPECT_EQ(parse(R"("operation":"set_skill","botGuid":42,"skillId":186,"value":1,"maximum":525)").error.code,
+              ErrorCode::InvalidSkill);
+    EXPECT_EQ(parse(R"("operation":"set_skill","botGuid":42,"skillId":0,"value":1,"maximum":75)").error.code,
+              ErrorCode::InvalidSkill);
+    EXPECT_EQ(parse(R"("operation":"set_skill","botGuid":42,"skillId":186,"value":1)").error.code,
+              ErrorCode::MalformedRequest);
+
+    RequestParseResult const teleport =
+        parse(R"("operation":"teleport_to_gameobject","botGuid":42,"gameObjectEntry":1731)");
+    ASSERT_TRUE(teleport.request);
+    EXPECT_EQ(teleport.request->operation, Operation::TeleportToGameObject);
+    EXPECT_EQ(teleport.request->numbers.at("gameObjectEntry"), 1731U);
+    EXPECT_EQ(parse(R"("operation":"teleport_to_gameobject","botGuid":42,"gameObjectEntry":0)").error.code,
+              ErrorCode::GameObjectNotFound);
+    EXPECT_EQ(parse(R"("operation":"teleport_to_gameobject","botGuid":42,"gameObjectEntry":1731,"x":1)").error.code,
+              ErrorCode::MalformedRequest);
+    EXPECT_STREQ(ErrorCodeName(ErrorCode::InvalidSkill), "invalid_skill");
+    EXPECT_STREQ(ErrorCodeName(ErrorCode::GameObjectNotFound), "gameobject_not_found");
+}
+
 TEST(PlayerbotVerificationProtocolTest, StrictParserRejectsUnsafeRecoveryShapes)
 {
     auto parse = [](std::string const& suffix)

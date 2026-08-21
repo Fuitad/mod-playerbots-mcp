@@ -6,7 +6,9 @@ This project is not ready for installation or use. It provides no deployment or 
 
 Playerbots MCP provides an authenticated loopback verification server inside AzerothCore and a typed Python MCP
 sidecar. The C++ bridge owns framing, authentication, bounded world thread operations, inspection, command dispatch,
-anomaly reads, and guarded homebind recovery. The Python sidecar exposes those operations as typed MCP tools.
+anomaly reads, guarded homebind recovery, and two verification staging operations (overwrite a skill the bot already
+knows, teleport a bot beside the nearest spawned gameobject of an entry). The Python sidecar exposes those operations
+as typed MCP tools.
 
 The server reads inspection data from mod-playerbots-telemetry and delegates intervention state to
 mod-playerbots-recovery. It does not store MCP transport or protocol code in mod-playerbots.
