@@ -24,6 +24,7 @@
 #include "Bot/Recovery/PlayerbotRecovery.h"
 #include "Bot/Telemetry/PlayerbotTelemetryState.h"
 #include "CharacterCache.h"
+#include "Chat.h"
 #include "DBCStores.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -795,6 +796,28 @@ void SetPlayerbotVerificationAcceptingRequests(bool accepting) { acceptingReques
 
 bool IsPlayerbotVerificationAcceptingRequests() { return acceptingRequests.load(); }
 
+// GM tooling: one console command, run with console authority exactly as the worldserver console
+// would, with its output captured. The parser already refused process and account administration.
+Response BuildGmCommandResponse(Request const& request)
+{
+    std::string output;
+    auto const print = [](void* argument, std::string_view text)
+    {
+        auto* const sink = static_cast<std::string*>(argument);
+        if (sink->size() < MAX_RESPONSE_PAYLOAD_BYTES / 2u)
+            sink->append(text);
+    };
+    CliHandler handler(&output, print);
+    bool const parsed = handler.ParseCommands(request.command);
+    std::ostringstream out;
+    out << "{\"command\":";
+    AppendJsonString(out, request.command);
+    out << ",\"succeeded\":" << ((parsed && !handler.HasSentErrorMessage()) ? "true" : "false") << ",\"output\":";
+    AppendJsonString(out, output);
+    out << '}';
+    return Response::Success(out.str());
+}
+
 Response ExecuteVerificationOnWorldThread(Request const& request, PlayerbotRecoveryPersistence recoveryPersistence)
 {
     switch (request.operation)
@@ -817,6 +840,8 @@ Response ExecuteVerificationOnWorldThread(Request const& request, PlayerbotRecov
             return BuildSetSkillResponse(request);
         case Operation::TeleportToGameObject:
             return BuildTeleportToGameObjectResponse(request);
+        case Operation::GmCommand:
+            return BuildGmCommandResponse(request);
     }
     return Response::Failure(ErrorCode::UnknownOperation, {});
 }

@@ -7,6 +7,7 @@
 #include "PlayerbotVerificationProtocol.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <iomanip>
 #include <limits>
@@ -1186,6 +1187,17 @@ RequestParseResult PlayerbotVerification::ParseRequestPayload(std::string const&
         request.botGuid = static_cast<uint32>(*botGuid);
         return {.request = std::move(request)};
     }
+    if (*operationName == "gm_command")
+    {
+        if (!HasExactFields(*fields, CommonFields({"command"})))
+            return {.error = MakeError(ErrorCode::MalformedRequest)};
+        std::optional<std::string> command = StringField(*fields, "command");
+        if (!command || command->empty() || IsRefusedGmCommand(*command))
+            return {.error = MakeError(ErrorCode::InvalidCommand)};
+        request.operation = Operation::GmCommand;
+        request.command = std::move(*command);
+        return {.request = std::move(request)};
+    }
     if (*operationName == "check")
     {
         std::optional<uint64> botGuid = UnsignedField(*fields, "botGuid");
@@ -1197,6 +1209,27 @@ RequestParseResult PlayerbotVerification::ParseRequestPayload(std::string const&
     }
 
     return {.error = MakeError(ErrorCode::UnknownOperation)};
+}
+
+bool PlayerbotVerification::IsRefusedGmCommand(std::string_view command)
+{
+    std::size_t begin = command.find_first_not_of(" \t.");
+    if (begin == std::string_view::npos)
+        return true;
+    std::size_t const end = command.find_first_of(" \t", begin);
+    std::string_view const word =
+        command.substr(begin, end == std::string_view::npos ? std::string_view::npos : end - begin);
+    static constexpr std::string_view refused[] = {"server", "account", "quit", "exit"};
+    for (std::string_view const entry : refused)
+    {
+        if (word.size() == entry.size() &&
+            std::equal(word.begin(), word.end(), entry.begin(),
+                       [](char left, char right) { return std::tolower(static_cast<unsigned char>(left)) == right; }))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 Response Response::Success(std::string resultJson) { return {.ok = true, .resultJson = std::move(resultJson)}; }

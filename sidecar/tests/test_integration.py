@@ -568,6 +568,19 @@ class TestToolsOverTheWire:
         assert [request["operation"] for request in server.requests] == ["inspect", "command"]
 
     @pytest.mark.anyio
+    async def test_run_gm_command_returns_the_captured_console_output(self) -> None:
+        payload = {"command": ".tele name Bot brill", "succeeded": True, "output": "Teleported.\n"}
+        with FakeVerificationServer(responder(payload)) as server:
+            async with Client(make_mcp_server(server.port)) as client:
+                result = await client.call_tool("run_gm_command", {"command": ".tele name Bot brill"})
+
+        assert result.structured_content is not None
+        assert result.structured_content["succeeded"] is True
+        assert result.structured_content["output"] == "Teleported.\n"
+        assert [request["operation"] for request in server.requests] == ["gm_command"]
+        assert server.requests[0]["command"] == ".tele name Bot brill"
+
+    @pytest.mark.anyio
     async def test_recover_bot_calls_only_the_narrow_recovery_operation(self) -> None:
         with FakeVerificationServer(responder(recovery_result())) as server:
             async with Client(make_mcp_server(server.port)) as client:
@@ -1136,6 +1149,9 @@ class TestStdioAdapter:
             "inspect_bot_loops",
             "wait_for_bot",
             "send_bot_command",
+            "set_bot_skill",
+            "teleport_bot_to_gameobject",
+            "run_gm_command",
             "recover_bot",
         }
         assert result.structured_content is not None

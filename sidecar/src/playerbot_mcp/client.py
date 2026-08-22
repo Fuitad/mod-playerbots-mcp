@@ -27,6 +27,8 @@ from playerbot_mcp.protocol import (
     CheckResult,
     CommandRequest,
     CommandResult,
+    GmCommandRequest,
+    GmCommandResult,
     ConfigurationError,
     InspectRequest,
     InspectResult,
@@ -137,6 +139,10 @@ class VerificationClient:
         """Dispatches a command. A success here means dispatched, never accepted by the bot."""
         request = CommandRequest(bot_guid=bot_guid, master_guid=master_guid, command=command)
         return self._call(request, CommandResult)
+
+    def gm_command(self, *, command: str) -> GmCommandResult:
+        """Runs one console command with console authority and returns its captured output."""
+        return self._call(GmCommandRequest(command=command), GmCommandResult)
 
     def set_skill(self, *, bot_guid: int, skill_id: int, value: int, maximum: int) -> SetSkillResult:
         """Verification staging: overwrite one skill the bot already knows."""

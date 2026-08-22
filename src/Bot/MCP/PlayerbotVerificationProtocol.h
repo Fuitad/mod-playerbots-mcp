@@ -89,8 +89,15 @@ enum class Operation
     Command,
     Recover,
     SetSkill,
-    TeleportToGameObject
+    TeleportToGameObject,
+    // Runs one console command with console authority on the world thread and returns its output.
+    GmCommand
 };
+
+// The console command families the bridge refuses outright: process lifecycle and account
+// administration are not verification tooling. The check ignores a leading dot and surrounding
+// whitespace and matches the first word only.
+bool IsRefusedGmCommand(std::string_view command);
 
 enum class RecoveryDestination
 {

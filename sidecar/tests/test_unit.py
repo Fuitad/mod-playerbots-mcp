@@ -260,6 +260,20 @@ class TestRequestPayloads:
             "botGuid": 3,
             "gameObjectEntry": 1731,
         }
+        from playerbot_mcp.protocol import GmCommandRequest
+
+        gm = json.loads(
+            build_request_payload(GmCommandRequest(command=".tele name Bot brill"), request_id=8, token=TOKEN)
+        )
+        assert gm == {
+            "schemaVersion": SCHEMA_VERSION,
+            "requestId": 8,
+            "token": TOKEN,
+            "operation": "gm_command",
+            "command": ".tele name Bot brill",
+        }
+        with pytest.raises(ValidationError):
+            GmCommandRequest(command="")
 
     def test_a_map_check_accepts_map_zero_because_the_server_does(self) -> None:
         payload = json.loads(build_request_payload(MapCheck(bot_guid=3, map_id=0), request_id=4, token=TOKEN))
@@ -526,7 +540,7 @@ class TestToolSurface:
         return build_server(VerificationClient(settings))
 
     @pytest.mark.anyio
-    async def test_exactly_the_nine_planned_tools_are_exposed(self) -> None:
+    async def test_exactly_the_ten_planned_tools_are_exposed(self) -> None:
         async with Client(self._server()) as client:
             listed = await client.list_tools()
         assert {tool.name for tool in listed.tools} == {
@@ -538,6 +552,7 @@ class TestToolSurface:
             "send_bot_command",
             "set_bot_skill",
             "teleport_bot_to_gameobject",
+            "run_gm_command",
             "recover_bot",
         }
 

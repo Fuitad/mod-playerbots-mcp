@@ -281,6 +281,33 @@ TEST(PlayerbotVerificationProtocolTest, StrictParserRejectsInvalidVersionAuthent
               ErrorCode::InvalidCommand);
 }
 
+TEST(PlayerbotVerificationProtocolTest, GmCommandParsesOneCommandAndRefusesServerAdministration)
+{
+    auto const parse = [](std::string const& body)
+    {
+        return ParseRequestPayload(R"({"schemaVersion":2,"requestId":13,"token":")" + TEST_TOKEN + R"(",)" + body + '}',
+                                   TestTokenDigest());
+    };
+    RequestParseResult const tele = parse(R"("operation":"gm_command","command":".tele name Leporaitceau brill")");
+    ASSERT_TRUE(tele.request);
+    EXPECT_EQ(tele.request->operation, Operation::GmCommand);
+    EXPECT_EQ(tele.request->command, ".tele name Leporaitceau brill");
+    EXPECT_EQ(parse(R"("operation":"gm_command","command":"")").error.code, ErrorCode::InvalidCommand);
+    EXPECT_EQ(parse(R"("operation":"gm_command","command":".server shutdown 1")").error.code,
+              ErrorCode::InvalidCommand);
+    EXPECT_EQ(parse(R"("operation":"gm_command","command":"account set gmlevel x 3")").error.code,
+              ErrorCode::InvalidCommand);
+    EXPECT_EQ(parse(R"("operation":"gm_command","command":".tele brill","botGuid":3)").error.code,
+              ErrorCode::MalformedRequest);
+
+    EXPECT_TRUE(IsRefusedGmCommand(" .Server restart"));
+    EXPECT_TRUE(IsRefusedGmCommand("quit"));
+    EXPECT_TRUE(IsRefusedGmCommand("."));
+    EXPECT_FALSE(IsRefusedGmCommand(".servername"));
+    EXPECT_FALSE(IsRefusedGmCommand("tele name Foo brill"));
+    EXPECT_FALSE(IsRefusedGmCommand(".go xyz 1 2 3 0"));
+}
+
 TEST(PlayerbotVerificationProtocolTest, PaginationIsGuidOrderedBoundedAndExclusive)
 {
     std::optional<GuidPage> const page = PaginateGuids({9, 1, 7, 3, 5}, 3, 2);

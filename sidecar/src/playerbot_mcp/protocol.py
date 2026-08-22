@@ -207,6 +207,14 @@ class TeleportToGameObjectRequest(VerificationRequest):
     game_object_entry: int = Field(ge=1, le=UINT32_MAX)
 
 
+class GmCommandRequest(VerificationRequest):
+    """Run one console command with console authority. Server and account administration are refused."""
+
+    operation: ClassVar[str] = "gm_command"
+
+    command: str = Field(min_length=1)
+
+
 class RecoverRequest(VerificationRequest):
     operation: ClassVar[str] = "recover"
 
@@ -679,6 +687,12 @@ class TeleportToGameObjectResult(WireModel):
     spawn_id: int
     map_id: int
     distance_before: float
+
+
+class GmCommandResult(WireModel):
+    command: str
+    succeeded: bool
+    output: str
 
 
 class RecoveryOutcome(StrEnum):

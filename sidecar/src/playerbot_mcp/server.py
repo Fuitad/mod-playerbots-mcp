@@ -45,6 +45,8 @@ from playerbot_mcp.protocol import (
     SetSkillRequest,
     SetSkillResult,
     StatusResult,
+    GmCommandRequest,
+    GmCommandResult,
     TeleportToGameObjectRequest,
     TeleportToGameObjectResult,
     VerificationConnectionError,
@@ -486,6 +488,18 @@ def build_server(client: VerificationClient) -> MCPServer:
         return await anyio.to_thread.run_sync(
             partial(client.teleport_to_gameobject, bot_guid=bot_guid, game_object_entry=game_object_entry)
         )
+
+    @server.tool(
+        annotations=MUTATING,
+        description=(
+            "GM tooling: run one worldserver console command with console authority (for example "
+            ".tele name <bot> <location>, .go xyz <x> <y> <z> <map>, .npc info) and return its "
+            "captured output. Server lifecycle and account administration commands are refused."
+        ),
+    )
+    async def run_gm_command(command: str) -> GmCommandResult:
+        GmCommandRequest(command=command)
+        return await anyio.to_thread.run_sync(partial(client.gm_command, command=command))
 
     @server.tool(
         annotations=IDEMPOTENT_MUTATING,
