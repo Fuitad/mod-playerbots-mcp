@@ -16,7 +16,7 @@ mod-playerbots-recovery. It does not store MCP transport or protocol code in mod
 
 ## Travel diagnostics
 
-`inspect_bot` includes a typed `travel` section in inspection schema version 3. It is read only and reports the
+`inspect_bot` includes a typed `travel` section in inspection schema version 4. It is read only and reports the
 ordinary Playerbot travel state that already exists on the world thread.
 
 * `status`, `destination`, `forced`, and `canMove` describe the active travel target and whether the bot can move.
@@ -28,6 +28,21 @@ ordinary Playerbot travel state that already exists on the world thread.
 These fields diagnose route selection and movement stalls. They do not select a destination, move a bot, clear a
 route, or otherwise change game state. Coordinates and distances are observations from the current snapshot and can
 change on the next world update.
+
+## RPG target diagnostics
+
+`inspect_bot` includes the required `rpgTarget` section in inspection schema version 4. Agents should read this
+section instead of inferring an RPG target from the last action, nearby NPCs, or the ordinary `travel` section.
+
+* `available` states whether the current `"rpg target"` AI value resolves to a live world object.
+* `type`, `guid`, `entry`, and `name` identify that exact object.
+* `npcFlags` exposes the complete creature NPC flag mask. It is zero for a player or gameobject target.
+* `distanceYards` measures the current three dimensional distance from the bot to the target.
+* `moving` states whether a unit target is moving at inspection time.
+
+When `available` is false, every detail field is null. The typed Python result exposes the same section as
+`rpg_target`, with fields such as `npc_flags` and `distance_yards`. The section is observational only. It does not
+select, clear, or move toward a target.
 
 ## Dependencies
 

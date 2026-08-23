@@ -54,7 +54,7 @@ def latest_attempt(
 def inspection_payload(**overrides: Any) -> dict[str, Any]:
     """Builds a complete verification inspection exactly as the C++ serializer emits it."""
     payload: dict[str, Any] = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "ok": True,
         "identity": {
             "guid": "0x0000000000000003",
@@ -125,6 +125,16 @@ def inspection_payload(**overrides: Any) -> dict[str, Any]:
                 "delayMs": 5000,
                 "priority": "forced",
             },
+        },
+        "rpgTarget": {
+            "available": True,
+            "type": "creature",
+            "guid": "Creature-0-1-14990-208472",
+            "entry": 14990,
+            "name": "Defilers Emissary",
+            "npcFlags": 1048577,
+            "distanceYards": 37.5,
+            "moving": True,
         },
         "action": {
             "lastExecutedAction": "melee",

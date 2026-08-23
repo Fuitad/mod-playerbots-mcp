@@ -167,7 +167,7 @@ def responder(result: dict[str, Any]) -> Handler:
 
 STATUS_RESULT: dict[str, Any] = {
     "protocolSchemaVersion": 2,
-    "inspectionSchemaVersion": 3,
+    "inspectionSchemaVersion": 4,
     "moduleEnabled": True,
     "queueAvailable": True,
     "queueSize": 3,
@@ -216,6 +216,10 @@ class TestHappyPath:
         assert result.travel.destination.title == "Botanist Tyniarrel"
         assert result.travel.route.next_point.map_id == 530
         assert result.travel.last_movement.priority == "forced"
+        assert result.rpg_target.name == "Defilers Emissary"
+        assert result.rpg_target.entry == 14990
+        assert result.rpg_target.npc_flags == 1048577
+        assert result.rpg_target.moving is True
 
     def test_check_reports_the_match_and_the_snapshot_it_was_evaluated_against(self) -> None:
         payload = {"matched": True, "condition": "action", "snapshot": inspection_payload()}
@@ -505,6 +509,7 @@ class TestToolsOverTheWire:
         assert result.structured_content is not None
         assert result.structured_content["identity"]["name"] == "Grimtusk"
         assert result.structured_content["finance"]["moneyCopper"] == 123_456_789
+        assert result.structured_content["rpgTarget"]["name"] == "Defilers Emissary"
 
     @pytest.mark.anyio
     async def test_inspect_bot_loops_returns_actionable_serverwide_records(self) -> None:

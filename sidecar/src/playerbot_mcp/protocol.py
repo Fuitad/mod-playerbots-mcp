@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from pydantic.alias_generators import to_camel
 
 SCHEMA_VERSION = 2
-INSPECTION_SCHEMA_VERSION = 3
+INSPECTION_SCHEMA_VERSION = 4
 FRAME_HEADER_BYTES = 4
 MAX_FRAME_PAYLOAD_BYTES = 64 * 1024
 MAX_RESPONSE_PAYLOAD_BYTES = 60 * 1024
@@ -519,6 +519,34 @@ class Travel(WireModel):
     last_movement: LastMovement
 
 
+class RpgTarget(WireModel):
+    available: bool
+    type: Literal["creature", "player", "gameObject", "unknown"] | None
+    guid: str | None = Field(min_length=1)
+    entry: int | None = Field(ge=0, le=UINT32_MAX)
+    name: str | None = Field(min_length=1)
+    npc_flags: int | None = Field(ge=0, le=UINT32_MAX)
+    distance_yards: float | None = Field(ge=0)
+    moving: bool | None
+
+    @model_validator(mode="after")
+    def availability_matches_details(self) -> RpgTarget:
+        details = (
+            self.type,
+            self.guid,
+            self.entry,
+            self.name,
+            self.npc_flags,
+            self.distance_yards,
+            self.moving,
+        )
+        if self.available and any(value is None for value in details):
+            raise ValueError("An available RPG target requires complete details.")
+        if not self.available and any(value is not None for value in details):
+            raise ValueError("An unavailable RPG target requires null details.")
+        return self
+
+
 class ActionAttempt(WireModel):
     sequence: int
     timestamp_ms: int
@@ -646,6 +674,7 @@ class InspectResult(WireModel):
     position: Position
     transport: Transport
     travel: Travel
+    rpg_target: RpgTarget
     action: ActionSection
     finance: Finance
     career: Career

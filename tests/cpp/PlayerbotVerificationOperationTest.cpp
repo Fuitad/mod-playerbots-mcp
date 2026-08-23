@@ -26,6 +26,7 @@
 #include "IntegrationTestFixture.h"
 #include "ObjectAccessor.h"
 #include "Script/WorldThr/PlayerbotWorldThreadProcessor.h"
+#include "TravelMgr.h"
 #include "gtest/gtest.h"
 
 using namespace PlayerbotVerification;
@@ -771,6 +772,7 @@ TEST_F(PlayerbotVerificationOperationTest, InspectionLeavesCareerAndEconomyObser
     });
 
     PlayerbotVerificationSnapshot const before = VerificationState(botAI).CopySnapshot();
+    botAI->GetAiObjectContext()->GetValue<GuidPosition>("rpg target")->Set(GuidPosition(master));
     Response const first = DispatchWithPump(SimpleRequest(Operation::Inspect, 3));
     Response const second = DispatchWithPump(SimpleRequest(Operation::Inspect, 3));
 
@@ -790,6 +792,8 @@ TEST_F(PlayerbotVerificationOperationTest, InspectionLeavesCareerAndEconomyObser
     EXPECT_NE(first.resultJson.find(R"("cooldownSeconds":320)"), std::string::npos);
     EXPECT_NE(first.resultJson.find(R"("quarantined":true)"), std::string::npos);
     EXPECT_NE(first.resultJson.find(R"("nextEligibleTime":12345)"), std::string::npos);
+    EXPECT_NE(first.resultJson.find(R"("rpgTarget":{"available":true,"type":"player",)"), std::string::npos);
+    EXPECT_NE(first.resultJson.find(R"("guid":")" + master->GetGUID().ToString()), std::string::npos);
     EXPECT_EQ(VerificationState(botAI).CopySnapshot(), before);
 
     PlayerbotVerificationInspection inspection = PlayerbotInspector::BuildVerification(bot, botAI);
@@ -916,7 +920,7 @@ TEST_F(PlayerbotVerificationOperationTest, StatusAndListReportReadinessAndGuidOr
     Response const status = DispatchWithPump(SimpleRequest(Operation::Status));
     ASSERT_TRUE(status.ok);
     EXPECT_NE(status.resultJson.find(R"("protocolSchemaVersion":2)"), std::string::npos);
-    EXPECT_NE(status.resultJson.find(R"("inspectionSchemaVersion":3)"), std::string::npos);
+    EXPECT_NE(status.resultJson.find(R"("inspectionSchemaVersion":4)"), std::string::npos);
     EXPECT_NE(status.resultJson.find(R"("moduleEnabled":true)"), std::string::npos);
     EXPECT_NE(status.resultJson.find(R"("queueAvailable":true)"), std::string::npos);
     EXPECT_NE(status.resultJson.find(R"("botCount":3)"), std::string::npos);

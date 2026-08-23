@@ -328,7 +328,7 @@ class TestStrictModels:
             StatusResult.model_validate(
                 {
                     "protocolSchemaVersion": 2,
-                    "inspectionSchemaVersion": 3,
+                    "inspectionSchemaVersion": 4,
                     "moduleEnabled": "true",
                     "queueAvailable": True,
                     "queueSize": 0,
@@ -339,6 +339,31 @@ class TestStrictModels:
     def test_a_missing_field_is_rejected_rather_than_defaulted(self) -> None:
         payload = inspection_payload()
         del payload["finance"]
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    def test_an_available_rpg_target_requires_complete_identity(self) -> None:
+        payload = inspection_payload()
+        payload["rpgTarget"]["guid"] = None
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    def test_an_unavailable_rpg_target_requires_null_details(self) -> None:
+        payload = inspection_payload()
+        payload["rpgTarget"] = {
+            "available": False,
+            "type": None,
+            "guid": None,
+            "entry": None,
+            "name": None,
+            "npcFlags": None,
+            "distanceYards": None,
+            "moving": None,
+        }
+        result = InspectResult.model_validate(payload)
+        assert result.rpg_target.available is False
+
+        payload["rpgTarget"]["name"] = "unexpected"
         with pytest.raises(ValidationError):
             InspectResult.model_validate(payload)
 

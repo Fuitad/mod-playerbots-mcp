@@ -33,6 +33,8 @@ from playerbot_mcp.protocol import (
     CommandResult,
     ConfigurationError,
     ErrorCode,
+    GmCommandRequest,
+    GmCommandResult,
     InspectResult,
     ListResult,
     ProtocolMismatchError,
@@ -45,8 +47,6 @@ from playerbot_mcp.protocol import (
     SetSkillRequest,
     SetSkillResult,
     StatusResult,
-    GmCommandRequest,
-    GmCommandResult,
     TeleportToGameObjectRequest,
     TeleportToGameObjectResult,
     VerificationConnectionError,
@@ -313,7 +313,9 @@ def build_server(client: VerificationClient) -> MCPServer:
 
     @server.tool(
         annotations=READ_ONLY,
-        description="Return the full verification snapshot for one bot.",
+        description=(
+            "Return the full verification snapshot, including exact RPG target diagnostics, for one bot."
+        ),
     )
     async def inspect_bot(bot_guid: int) -> InspectResult:
         return await anyio.to_thread.run_sync(partial(client.inspect, bot_guid=bot_guid))
