@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <iomanip>
+#include <iterator>
 #include <limits>
 #include <set>
 #include <sstream>
@@ -1220,16 +1221,13 @@ bool PlayerbotVerification::IsRefusedGmCommand(std::string_view command)
     std::string_view const word =
         command.substr(begin, end == std::string_view::npos ? std::string_view::npos : end - begin);
     static constexpr std::string_view refused[] = {"server", "account", "quit", "exit"};
-    for (std::string_view const entry : refused)
-    {
-        if (word.size() == entry.size() &&
-            std::equal(word.begin(), word.end(), entry.begin(),
-                       [](char left, char right) { return std::tolower(static_cast<unsigned char>(left)) == right; }))
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(std::begin(refused), std::end(refused),
+                       [word](std::string_view const entry)
+                       {
+                           return word.size() == entry.size() &&
+                                  std::equal(word.begin(), word.end(), entry.begin(), [](char left, char right)
+                                             { return std::tolower(static_cast<unsigned char>(left)) == right; });
+                       });
 }
 
 Response Response::Success(std::string resultJson) { return {.ok = true, .resultJson = std::move(resultJson)}; }

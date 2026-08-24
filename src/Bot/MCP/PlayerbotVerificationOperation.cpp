@@ -631,7 +631,7 @@ Response BuildCommandResponse(Request const& request)
 Response BuildSetSkillResponse(Request const& request)
 {
     Player* bot = ObjectAccessor::FindPlayer(MakePlayerGuid(request.botGuid));
-    PlayerbotAI* botAI = ResolveBotAI(bot);
+    PlayerbotAI const* botAI = ResolveBotAI(bot);
     if (!botAI)
         return Response::Failure(ErrorCode::BotNotFound, {});
 
