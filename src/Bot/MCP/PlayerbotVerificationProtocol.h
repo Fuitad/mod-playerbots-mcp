@@ -30,6 +30,8 @@ inline constexpr uint32 MAX_ANOMALY_LIMIT = 50;
 // Profession rank caps are multiples of 75 up to Grand Master (450); SetSkill derives the step from it.
 inline constexpr uint32 SKILL_RANK_STEP = 75;
 inline constexpr uint32 MAX_SKILL_MAXIMUM = 450;
+inline constexpr uint32 MAX_ACTIVITY_LEASE_SECONDS = 45 * 60;
+inline constexpr std::size_t ACTIVITY_LEASE_TOKEN_HEX_LENGTH = 32;
 
 enum class ErrorCode
 {
@@ -59,6 +61,9 @@ enum class ErrorCode
     InvalidRelationship,
     InvalidSkill,
     GameObjectNotFound,
+    NotRandomBot,
+    InvalidActivityLease,
+    ActivityLeaseConflict,
     InternalError
 };
 
@@ -90,6 +95,9 @@ enum class Operation
     Recover,
     SetSkill,
     TeleportToGameObject,
+    HoldActivity,
+    InspectActivityLease,
+    ReleaseActivity,
     // Runs one console command with console authority on the world thread and returns its output.
     GmCommand
 };

@@ -205,6 +205,51 @@ TEST(PlayerbotVerificationProtocolTest, StrictParserAcceptsSkillAndGameObjectSta
     EXPECT_STREQ(ErrorCodeName(ErrorCode::GameObjectNotFound), "gameobject_not_found");
 }
 
+TEST(PlayerbotVerificationProtocolTest, ActivityLeaseShapesAreStrictBoundedAndTokenOwned)
+{
+    std::string const leaseToken(32, 'a');
+    auto const parse = [](std::string const& body)
+    {
+        return ParseRequestPayload(R"({"schemaVersion":2,"requestId":14,"token":")" + TEST_TOKEN + R"(",)" + body + '}',
+                                   TestTokenDigest());
+    };
+
+    RequestParseResult const acquire = parse(R"("operation":"hold_activity","botGuid":42,"durationSeconds":2400)");
+    ASSERT_TRUE(acquire.request);
+    EXPECT_EQ(acquire.request->operation, Operation::HoldActivity);
+    EXPECT_EQ(acquire.request->botGuid, 42U);
+    EXPECT_EQ(acquire.request->numbers.at("durationSeconds"), 2400U);
+    EXPECT_FALSE(acquire.request->strings.contains("leaseToken"));
+
+    RequestParseResult const renew =
+        parse(R"("operation":"hold_activity","botGuid":42,"durationSeconds":600,"leaseToken":")" + leaseToken + R"(")");
+    ASSERT_TRUE(renew.request);
+    EXPECT_EQ(renew.request->strings.at("leaseToken"), leaseToken);
+
+    RequestParseResult const inspect = parse(R"("operation":"inspect_activity_lease","botGuid":42)");
+    ASSERT_TRUE(inspect.request);
+    EXPECT_EQ(inspect.request->operation, Operation::InspectActivityLease);
+
+    RequestParseResult const release =
+        parse(R"("operation":"release_activity","botGuid":42,"leaseToken":")" + leaseToken + R"(")");
+    ASSERT_TRUE(release.request);
+    EXPECT_EQ(release.request->operation, Operation::ReleaseActivity);
+    EXPECT_EQ(release.request->strings.at("leaseToken"), leaseToken);
+
+    EXPECT_EQ(parse(R"("operation":"hold_activity","botGuid":42,"durationSeconds":0)").error.code,
+              ErrorCode::InvalidActivityLease);
+    EXPECT_EQ(parse(R"("operation":"hold_activity","botGuid":42,"durationSeconds":2701)").error.code,
+              ErrorCode::InvalidActivityLease);
+    EXPECT_EQ(parse(R"("operation":"hold_activity","botGuid":42,"durationSeconds":600,"leaseToken":"ABC")").error.code,
+              ErrorCode::InvalidActivityLease);
+    EXPECT_EQ(parse(R"("operation":"inspect_activity_lease","botGuid":42,"durationSeconds":600)").error.code,
+              ErrorCode::MalformedRequest);
+    EXPECT_EQ(parse(R"("operation":"release_activity","botGuid":42)").error.code, ErrorCode::MalformedRequest);
+    EXPECT_STREQ(ErrorCodeName(ErrorCode::NotRandomBot), "not_random_bot");
+    EXPECT_STREQ(ErrorCodeName(ErrorCode::InvalidActivityLease), "invalid_activity_lease");
+    EXPECT_STREQ(ErrorCodeName(ErrorCode::ActivityLeaseConflict), "activity_lease_conflict");
+}
+
 TEST(PlayerbotVerificationProtocolTest, StrictParserRejectsUnsafeRecoveryShapes)
 {
     auto parse = [](std::string const& suffix)

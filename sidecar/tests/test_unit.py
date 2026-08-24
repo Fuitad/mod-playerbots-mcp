@@ -37,6 +37,8 @@ from playerbot_mcp.protocol import (
     CommandRequest,
     EconomyCheck,
     ErrorCode,
+    HoldActivityRequest,
+    InspectActivityLeaseRequest,
     InspectRequest,
     InspectResult,
     ListRequest,
@@ -46,6 +48,7 @@ from playerbot_mcp.protocol import (
     ProfessionSkillCheck,
     RecoverRequest,
     RecoveryResult,
+    ReleaseActivityRequest,
     StatusRequest,
     StatusResult,
     build_check,
@@ -274,6 +277,53 @@ class TestRequestPayloads:
         }
         with pytest.raises(ValidationError):
             GmCommandRequest(command="")
+
+    def test_activity_lease_requests_are_exact_bounded_and_token_owned(self) -> None:
+        lease_token = "a" * 32
+        acquire = json.loads(
+            build_request_payload(
+                HoldActivityRequest(bot_guid=3, duration_seconds=2400), request_id=9, token=TOKEN
+            )
+        )
+        assert acquire == {
+            "schemaVersion": SCHEMA_VERSION,
+            "requestId": 9,
+            "token": TOKEN,
+            "operation": "hold_activity",
+            "botGuid": 3,
+            "durationSeconds": 2400,
+        }
+
+        renew = json.loads(
+            build_request_payload(
+                HoldActivityRequest(bot_guid=3, duration_seconds=600, lease_token=lease_token),
+                request_id=10,
+                token=TOKEN,
+            )
+        )
+        assert renew["leaseToken"] == lease_token
+
+        inspect = json.loads(
+            build_request_payload(InspectActivityLeaseRequest(bot_guid=3), request_id=11, token=TOKEN)
+        )
+        assert inspect["operation"] == "inspect_activity_lease"
+        assert set(inspect) == {"schemaVersion", "requestId", "token", "operation", "botGuid"}
+
+        release = json.loads(
+            build_request_payload(
+                ReleaseActivityRequest(bot_guid=3, lease_token=lease_token), request_id=12, token=TOKEN
+            )
+        )
+        assert release["operation"] == "release_activity"
+        assert release["leaseToken"] == lease_token
+
+        for duration in (0, 2701):
+            with pytest.raises(ValidationError):
+                HoldActivityRequest(bot_guid=3, duration_seconds=duration)
+        with pytest.raises(ValidationError):
+            HoldActivityRequest(bot_guid=3, duration_seconds=600, lease_token="ABC")
+        with pytest.raises(ValidationError):
+            ReleaseActivityRequest(bot_guid=3, lease_token="ABC")
 
     def test_a_map_check_accepts_map_zero_because_the_server_does(self) -> None:
         payload = json.loads(build_request_payload(MapCheck(bot_guid=3, map_id=0), request_id=4, token=TOKEN))
@@ -565,7 +615,7 @@ class TestToolSurface:
         return build_server(VerificationClient(settings))
 
     @pytest.mark.anyio
-    async def test_exactly_the_ten_planned_tools_are_exposed(self) -> None:
+    async def test_exactly_the_thirteen_planned_tools_are_exposed(self) -> None:
         async with Client(self._server()) as client:
             listed = await client.list_tools()
         assert {tool.name for tool in listed.tools} == {
@@ -573,17 +623,20 @@ class TestToolSurface:
             "list_bots",
             "inspect_bot",
             "inspect_bot_loops",
+            "inspect_bot_activity_lease",
             "wait_for_bot",
             "send_bot_command",
             "set_bot_skill",
             "teleport_bot_to_gameobject",
             "run_gm_command",
+            "hold_bot_activity",
+            "release_bot_activity",
             "recover_bot",
         }
 
     @pytest.mark.anyio
-    async def test_only_the_five_observation_tools_are_read_only(self) -> None:
-        """Codex gates write approval on readOnlyHint, so the five read tools must carry it."""
+    async def test_only_the_six_observation_tools_are_read_only(self) -> None:
+        """Codex gates write approval on readOnlyHint, so the six read tools must carry it."""
         async with Client(self._server()) as client:
             listed = await client.list_tools()
         read_only = {
@@ -594,6 +647,7 @@ class TestToolSurface:
             "list_bots",
             "inspect_bot",
             "inspect_bot_loops",
+            "inspect_bot_activity_lease",
             "wait_for_bot",
         }
 
@@ -616,6 +670,16 @@ class TestToolSurface:
         assert recovery.annotations.read_only_hint is False
         assert recovery.annotations.destructive_hint is False
         assert recovery.annotations.idempotent_hint is True
+
+    @pytest.mark.anyio
+    async def test_activity_release_is_mutating_non_destructive_and_idempotent(self) -> None:
+        async with Client(self._server()) as client:
+            listed = await client.list_tools()
+        release = next(tool for tool in listed.tools if tool.name == "release_bot_activity")
+        assert release.annotations is not None
+        assert release.annotations.read_only_hint is False
+        assert release.annotations.destructive_hint is False
+        assert release.annotations.idempotent_hint is True
 
 
 class TestConditionBuilding:

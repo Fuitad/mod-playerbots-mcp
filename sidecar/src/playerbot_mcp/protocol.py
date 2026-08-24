@@ -25,6 +25,8 @@ MAX_RESPONSE_PAYLOAD_BYTES = 60 * 1024
 MIN_TOKEN_BYTES = 32
 MAX_LIST_LIMIT = 100
 MAX_ANOMALY_LIMIT = 50
+MAX_ACTIVITY_LEASE_SECONDS = 45 * 60
+ACTIVITY_LEASE_TOKEN_PATTERN = r"^[0-9a-f]{32}$"
 
 UINT32_MAX = 0xFFFFFFFF
 
@@ -58,6 +60,9 @@ class ErrorCode(StrEnum):
     INVALID_RELATIONSHIP = "invalid_relationship"
     INVALID_SKILL = "invalid_skill"
     GAMEOBJECT_NOT_FOUND = "gameobject_not_found"
+    NOT_RANDOM_BOT = "not_random_bot"
+    INVALID_ACTIVITY_LEASE = "invalid_activity_lease"
+    ACTIVITY_LEASE_CONFLICT = "activity_lease_conflict"
     INTERNAL_ERROR = "internal_error"
 
 
@@ -213,6 +218,29 @@ class GmCommandRequest(VerificationRequest):
     operation: ClassVar[str] = "gm_command"
 
     command: str = Field(min_length=1)
+
+
+class HoldActivityRequest(VerificationRequest):
+    """Acquire or renew one bounded random bot activity lease."""
+
+    operation: ClassVar[str] = "hold_activity"
+
+    bot_guid: int = Field(ge=1, le=UINT32_MAX)
+    duration_seconds: int = Field(ge=1, le=MAX_ACTIVITY_LEASE_SECONDS)
+    lease_token: str | None = Field(default=None, pattern=ACTIVITY_LEASE_TOKEN_PATTERN)
+
+
+class InspectActivityLeaseRequest(VerificationRequest):
+    operation: ClassVar[str] = "inspect_activity_lease"
+
+    bot_guid: int = Field(ge=1, le=UINT32_MAX)
+
+
+class ReleaseActivityRequest(VerificationRequest):
+    operation: ClassVar[str] = "release_activity"
+
+    bot_guid: int = Field(ge=1, le=UINT32_MAX)
+    lease_token: str = Field(pattern=ACTIVITY_LEASE_TOKEN_PATTERN)
 
 
 class RecoverRequest(VerificationRequest):
@@ -722,6 +750,26 @@ class GmCommandResult(WireModel):
     command: str
     succeeded: bool
     output: str
+
+
+class ActivityLeaseState(WireModel):
+    bot_guid: str
+    active: bool
+    expires_at: int = Field(ge=0)
+    remaining_seconds: int = Field(ge=0, le=MAX_ACTIVITY_LEASE_SECONDS)
+
+
+class HoldActivityResult(ActivityLeaseState):
+    outcome: Literal["acquired", "renewed"]
+    lease_token: str = Field(pattern=ACTIVITY_LEASE_TOKEN_PATTERN)
+
+
+class InspectActivityLeaseResult(ActivityLeaseState):
+    pass
+
+
+class ReleaseActivityResult(ActivityLeaseState):
+    outcome: Literal["released", "already_inactive"]
 
 
 class RecoveryOutcome(StrEnum):

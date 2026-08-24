@@ -23,6 +23,7 @@
 #include "Bot/Telemetry/PlayerbotVerificationState.h"
 #include "CharacterCache.h"
 #include "DBCStores.h"
+#include "GameTime.h"
 #include "IntegrationTestFixture.h"
 #include "ObjectAccessor.h"
 #include "Script/WorldThr/PlayerbotWorldThreadProcessor.h"
@@ -57,6 +58,8 @@ protected:
         previousEnabled = sPlayerbotAIConfig.enabled;
         previousCommandPrefix = sPlayerbotAIConfig.commandPrefix;
         previousCommandSeparator = sPlayerbotAIConfig.commandSeparator;
+        previousBotActiveAlone = sPlayerbotAIConfig.botActiveAlone;
+        previousRandomBotAccounts = sPlayerbotAIConfig.randomBotAccounts;
         sPlayerbotAIConfig.enabled = true;
 
         // The fixture never runs PlayerbotAIConfig::Initialize, so these carry the production
@@ -101,6 +104,8 @@ protected:
 
         sPlayerbotAIConfig.commandPrefix = previousCommandPrefix;
         sPlayerbotAIConfig.commandSeparator = previousCommandSeparator;
+        sPlayerbotAIConfig.botActiveAlone = previousBotActiveAlone;
+        sPlayerbotAIConfig.randomBotAccounts = previousRandomBotAccounts;
         sPlayerbotAIConfig.enabled = previousEnabled;
         IntegrationTestFixture::TearDown();
     }
@@ -181,6 +186,8 @@ protected:
     std::vector<TestPlayer*> registeredPlayers;
     std::vector<std::pair<ObjectGuid, std::string>> cachedCharacters;
     bool previousEnabled = false;
+    uint32 previousBotActiveAlone = 0;
+    std::vector<uint32> previousRandomBotAccounts;
     std::string previousCommandPrefix;
     std::string previousCommandSeparator;
 };
@@ -628,6 +635,80 @@ TEST_F(PlayerbotVerificationOperationTest, SetSkillOverwritesOnlyAKnownSkillAndR
 
     request.botGuid = 999;
     EXPECT_EQ(DispatchWithPump(request).error.code, ErrorCode::BotNotFound);
+}
+
+TEST_F(PlayerbotVerificationOperationTest, ActivityLeaseIsBoundedTokenOwnedRenewableAndIdempotentlyReleased)
+{
+    sPlayerbotAIConfig.botActiveAlone = 0;
+    TestPlayer* bot = AddRealPlayer(320, "ActivityLeaseBot");
+    PlayerbotAI* botAI = AddBot(bot, nullptr);
+    ASSERT_NE(botAI, nullptr);
+    sPlayerbotAIConfig.randomBotAccounts.push_back(bot->GetSession()->GetAccountId());
+
+    PlayerbotActivityLeaseAcquireResult const direct = botAI->HoldActivityLease(std::string(32, 'd'), 60, 1000);
+    EXPECT_EQ(direct.outcome, PlayerbotActivityLeaseAcquireOutcome::Acquired);
+    EXPECT_TRUE(direct.state.active);
+    EXPECT_EQ(direct.state.expiresAt, 1060U);
+    EXPECT_TRUE(botAI->IsActivityLeaseActive(1059));
+    EXPECT_FALSE(botAI->IsActivityLeaseActive(1060));
+    EXPECT_EQ(botAI->ReleaseActivityLease(std::string(32, 'd'), 1060),
+              PlayerbotActivityLeaseReleaseOutcome::AlreadyInactive);
+
+    Request hold = SimpleRequest(Operation::HoldActivity, 320);
+    hold.numbers["durationSeconds"] = 2400;
+    Response const acquired = ExecuteVerificationOnWorldThread(hold);
+    ASSERT_TRUE(acquired.ok);
+    EXPECT_NE(acquired.resultJson.find(R"("outcome":"acquired")"), std::string::npos);
+    EXPECT_NE(acquired.resultJson.find(R"("active":true)"), std::string::npos);
+
+    PlayerbotActivityLeaseState const held = botAI->InspectActivityLease(GameTime::GetGameTime().count());
+    ASSERT_TRUE(held.active);
+    ASSERT_EQ(held.token.size(), 32U);
+    EXPECT_TRUE(botAI->AllowActivity(ALL_ACTIVITY, true));
+    EXPECT_NE(acquired.resultJson.find(held.token), std::string::npos);
+
+    Response const conflicting = ExecuteVerificationOnWorldThread(hold);
+    EXPECT_EQ(conflicting.error.code, ErrorCode::ActivityLeaseConflict);
+
+    Request renew = hold;
+    renew.strings["leaseToken"] = held.token;
+    Response const renewed = ExecuteVerificationOnWorldThread(renew);
+    ASSERT_TRUE(renewed.ok);
+    EXPECT_NE(renewed.resultJson.find(R"("outcome":"renewed")"), std::string::npos);
+
+    Response const inspected = ExecuteVerificationOnWorldThread(SimpleRequest(Operation::InspectActivityLease, 320));
+    ASSERT_TRUE(inspected.ok);
+    EXPECT_NE(inspected.resultJson.find(R"("active":true)"), std::string::npos);
+    EXPECT_EQ(inspected.resultJson.find(held.token), std::string::npos);
+
+    // Cleanup remains possible if the bot acquires a master after the monitor obtained its lease.
+    botAI->SetMaster(AddRealPlayer(324, "LateLeaseMaster"));
+    Request release = SimpleRequest(Operation::ReleaseActivity, 320);
+    release.strings["leaseToken"] = held.token;
+    Response const released = ExecuteVerificationOnWorldThread(release);
+    ASSERT_TRUE(released.ok);
+    EXPECT_NE(released.resultJson.find(R"("outcome":"released")"), std::string::npos);
+    EXPECT_FALSE(botAI->InspectActivityLease(GameTime::GetGameTime().count()).active);
+
+    Response const repeated = ExecuteVerificationOnWorldThread(release);
+    ASSERT_TRUE(repeated.ok);
+    EXPECT_NE(repeated.resultJson.find(R"("outcome":"already_inactive")"), std::string::npos);
+}
+
+TEST_F(PlayerbotVerificationOperationTest, ActivityLeaseRefusesNonRandomOrMasteredBots)
+{
+    TestPlayer* ordinary = AddRealPlayer(321, "OrdinaryBot");
+    ASSERT_NE(AddBot(ordinary, nullptr), nullptr);
+    Request hold = SimpleRequest(Operation::HoldActivity, 321);
+    hold.numbers["durationSeconds"] = 600;
+    EXPECT_EQ(ExecuteVerificationOnWorldThread(hold).error.code, ErrorCode::NotRandomBot);
+
+    TestPlayer* master = AddRealPlayer(322, "LeaseMaster");
+    TestPlayer* random = AddRealPlayer(323, "MasteredRandomBot");
+    ASSERT_NE(AddBot(random, master), nullptr);
+    sPlayerbotAIConfig.randomBotAccounts.push_back(random->GetSession()->GetAccountId());
+    hold.botGuid = 323;
+    EXPECT_EQ(ExecuteVerificationOnWorldThread(hold).error.code, ErrorCode::InvalidRelationship);
 }
 
 TEST_F(PlayerbotVerificationOperationTest, TeleportToGameObjectRefusesWhenNoSpawnOfTheEntryExists)

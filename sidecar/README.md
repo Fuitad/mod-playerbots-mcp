@@ -12,6 +12,10 @@ guarded homebind recovery. Inspection schema version 4 includes typed read only 
 target diagnostics. `inspect_bot.rpg_target` identifies the exact current target, including its GUID, entry, name,
 NPC flags, distance, and movement state. Tests use a test owned loopback server and never contact a live worldserver.
 
+The activity lease tools acquire, inspect, renew, and release one self expiring lease for an online, masterless random
+bot. They allow a bounded monitor to bypass `AiPlayerbot.BotActiveAlone` rotation for only its selected cohort. Save
+each acquire result's ownership token, present it on renewal and release, and always attempt cleanup after monitoring.
+
 ## Development
 
 ```bash

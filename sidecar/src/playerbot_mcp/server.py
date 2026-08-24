@@ -1,7 +1,8 @@
 """MCP tool surface over the verification client.
 
-Five read tools carry the read only annotation so Codex can call them without a write prompt.
-`send_bot_command`, `set_bot_skill`, `teleport_bot_to_gameobject`, and `recover_bot` are mutating.
+Six read tools carry the read only annotation so Codex can call them without a write prompt.
+`send_bot_command`, `set_bot_skill`, `teleport_bot_to_gameobject`, activity lease writes, and
+`recover_bot` are mutating.
 Recovery is idempotent and is limited to one exact online managed Playerbot's authoritative homebind.
 The two staging tools exist for verification scenarios that would otherwise wait on the game clock.
 
@@ -35,6 +36,9 @@ from playerbot_mcp.protocol import (
     ErrorCode,
     GmCommandRequest,
     GmCommandResult,
+    HoldActivityRequest,
+    HoldActivityResult,
+    InspectActivityLeaseResult,
     InspectResult,
     ListResult,
     ProtocolMismatchError,
@@ -43,6 +47,8 @@ from playerbot_mcp.protocol import (
     RecoveryPersistenceState,
     RecoveryReason,
     RecoveryResult,
+    ReleaseActivityRequest,
+    ReleaseActivityResult,
     ServerError,
     SetSkillRequest,
     SetSkillResult,
@@ -333,6 +339,16 @@ def build_server(client: VerificationClient) -> MCPServer:
     @server.tool(
         annotations=READ_ONLY,
         description=(
+            "Read one online masterless random bot's bounded activity lease. Reports only the "
+            "active state and expiry. The ownership token is never disclosed by inspection."
+        ),
+    )
+    async def inspect_bot_activity_lease(bot_guid: int) -> InspectActivityLeaseResult:
+        return await anyio.to_thread.run_sync(partial(client.inspect_activity_lease, bot_guid=bot_guid))
+
+    @server.tool(
+        annotations=READ_ONLY,
+        description=(
             "Poll one exact condition until it matches or the timeout expires. Returns the "
             "deduplicated transitions observed while waiting and the final snapshot."
         ),
@@ -489,6 +505,40 @@ def build_server(client: VerificationClient) -> MCPServer:
         TeleportToGameObjectRequest(bot_guid=bot_guid, game_object_entry=game_object_entry)
         return await anyio.to_thread.run_sync(
             partial(client.teleport_to_gameobject, bot_guid=bot_guid, game_object_entry=game_object_entry)
+        )
+
+    @server.tool(
+        annotations=MUTATING,
+        description=(
+            "Acquire or renew a self expiring activity lease for one online masterless random bot. "
+            "The lease bypasses BotActiveAlone rotation without changing global configuration or "
+            "the bot's objective. Save the returned ownership token and release it after monitoring."
+        ),
+    )
+    async def hold_bot_activity(
+        bot_guid: int, duration_seconds: int, lease_token: str | None = None
+    ) -> HoldActivityResult:
+        HoldActivityRequest(bot_guid=bot_guid, duration_seconds=duration_seconds, lease_token=lease_token)
+        return await anyio.to_thread.run_sync(
+            partial(
+                client.hold_activity,
+                bot_guid=bot_guid,
+                duration_seconds=duration_seconds,
+                lease_token=lease_token,
+            )
+        )
+
+    @server.tool(
+        annotations=IDEMPOTENT_MUTATING,
+        description=(
+            "Release one exact activity lease by its ownership token. Repeating the same release is "
+            "safe. A different owner token is refused, and self expiry remains the cleanup fallback."
+        ),
+    )
+    async def release_bot_activity(bot_guid: int, lease_token: str) -> ReleaseActivityResult:
+        ReleaseActivityRequest(bot_guid=bot_guid, lease_token=lease_token)
+        return await anyio.to_thread.run_sync(
+            partial(client.release_activity, bot_guid=bot_guid, lease_token=lease_token)
         )
 
     @server.tool(

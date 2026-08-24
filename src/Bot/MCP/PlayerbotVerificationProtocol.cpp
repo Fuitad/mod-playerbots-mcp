@@ -86,6 +86,12 @@ ProtocolError MakeError(ErrorCode code)
             return {code, "The skill value or maximum is invalid."};
         case ErrorCode::GameObjectNotFound:
             return {code, "No spawned gameobject with that entry exists on the bot's map."};
+        case ErrorCode::NotRandomBot:
+            return {code, "The player is not an online random bot."};
+        case ErrorCode::InvalidActivityLease:
+            return {code, "The activity lease is malformed or outside its bounds."};
+        case ErrorCode::ActivityLeaseConflict:
+            return {code, "Another owner holds the bot's active activity lease."};
         case ErrorCode::InternalError:
             return {code, "The operation failed internally."};
         case ErrorCode::None:
@@ -541,6 +547,13 @@ std::optional<std::string> StringField(FlatJsonFields const& fields, std::string
 
 bool IsValidGuid(uint64 value) { return value > 0 && value <= std::numeric_limits<uint32>::max(); }
 
+bool IsActivityLeaseToken(std::string_view token)
+{
+    return token.size() == ACTIVITY_LEASE_TOKEN_HEX_LENGTH &&
+           std::all_of(token.begin(), token.end(), [](unsigned char character)
+                       { return std::isdigit(character) || (character >= 'a' && character <= 'f'); });
+}
+
 bool StoreUInt32(Request& request, FlatJsonFields const& fields, std::string const& name, bool allowZero = false)
 {
     std::optional<uint64> value = UnsignedField(fields, name);
@@ -715,6 +728,12 @@ char const* PlayerbotVerification::ErrorCodeName(ErrorCode code)
             return "invalid_skill";
         case ErrorCode::GameObjectNotFound:
             return "gameobject_not_found";
+        case ErrorCode::NotRandomBot:
+            return "not_random_bot";
+        case ErrorCode::InvalidActivityLease:
+            return "invalid_activity_lease";
+        case ErrorCode::ActivityLeaseConflict:
+            return "activity_lease_conflict";
         case ErrorCode::InternalError:
             return "internal_error";
     }
@@ -1186,6 +1205,55 @@ RequestParseResult PlayerbotVerification::ParseRequestPayload(std::string const&
             return {.error = MakeError(ErrorCode::GameObjectNotFound)};
         request.operation = Operation::TeleportToGameObject;
         request.botGuid = static_cast<uint32>(*botGuid);
+        return {.request = std::move(request)};
+    }
+    if (*operationName == "hold_activity")
+    {
+        if (!HasExactFields(*fields, CommonFields({"botGuid", "durationSeconds"}), {"leaseToken"}))
+            return {.error = MakeError(ErrorCode::MalformedRequest)};
+        std::optional<uint64> botGuid = UnsignedField(*fields, "botGuid");
+        if (!botGuid || !IsValidGuid(*botGuid))
+            return {.error = MakeError(ErrorCode::InvalidGuid)};
+        if (!StoreUInt32(request, *fields, "durationSeconds") ||
+            request.numbers["durationSeconds"] > MAX_ACTIVITY_LEASE_SECONDS)
+        {
+            return {.error = MakeError(ErrorCode::InvalidActivityLease)};
+        }
+        if (fields->contains("leaseToken"))
+        {
+            std::optional<std::string> leaseToken = StringField(*fields, "leaseToken");
+            if (!leaseToken || !IsActivityLeaseToken(*leaseToken))
+                return {.error = MakeError(ErrorCode::InvalidActivityLease)};
+            request.strings["leaseToken"] = std::move(*leaseToken);
+        }
+        request.operation = Operation::HoldActivity;
+        request.botGuid = static_cast<uint32>(*botGuid);
+        return {.request = std::move(request)};
+    }
+    if (*operationName == "inspect_activity_lease")
+    {
+        if (!HasExactFields(*fields, CommonFields({"botGuid"})))
+            return {.error = MakeError(ErrorCode::MalformedRequest)};
+        std::optional<uint64> botGuid = UnsignedField(*fields, "botGuid");
+        if (!botGuid || !IsValidGuid(*botGuid))
+            return {.error = MakeError(ErrorCode::InvalidGuid)};
+        request.operation = Operation::InspectActivityLease;
+        request.botGuid = static_cast<uint32>(*botGuid);
+        return {.request = std::move(request)};
+    }
+    if (*operationName == "release_activity")
+    {
+        if (!HasExactFields(*fields, CommonFields({"botGuid", "leaseToken"})))
+            return {.error = MakeError(ErrorCode::MalformedRequest)};
+        std::optional<uint64> botGuid = UnsignedField(*fields, "botGuid");
+        std::optional<std::string> leaseToken = StringField(*fields, "leaseToken");
+        if (!botGuid || !IsValidGuid(*botGuid))
+            return {.error = MakeError(ErrorCode::InvalidGuid)};
+        if (!leaseToken || !IsActivityLeaseToken(*leaseToken))
+            return {.error = MakeError(ErrorCode::InvalidActivityLease)};
+        request.operation = Operation::ReleaseActivity;
+        request.botGuid = static_cast<uint32>(*botGuid);
+        request.strings["leaseToken"] = std::move(*leaseToken);
         return {.request = std::move(request)};
     }
     if (*operationName == "gm_command")

@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -26,13 +27,16 @@
 #include "CharacterCache.h"
 #include "Chat.h"
 #include "DBCStores.h"
+#include "GameTime.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "PlayerbotAIConfig.h"
 #include "PoolMgr.h"
+#include "Random.h"
 #include "Script/Playerbots.h"
 #include "Script/WorldThr/PlayerbotWorldThreadProcessor.h"
 #include "SharedDefines.h"
+#include "StringFormat.h"
 #include "Timer.h"
 #include "Transport.h"
 
@@ -41,6 +45,7 @@ using namespace PlayerbotVerification;
 namespace
 {
 std::atomic<bool> acceptingRequests{false};
+static_assert(MAX_ACTIVITY_LEASE_SECONDS == PLAYERBOT_ACTIVITY_LEASE_MAX_SECONDS);
 
 std::string_view VerificationStateName(BotState state)
 {
@@ -144,6 +149,76 @@ std::string BoundedText(std::array<char, Capacity> const& value)
 }
 
 ObjectGuid MakePlayerGuid(uint32 lowGuid) { return ObjectGuid::Create<HighGuid::Player>(lowGuid); }
+PlayerbotAI* ResolveBotAI(Player* player);
+
+uint64 ActivityLeaseNow() { return GameTime::GetGameTime().count(); }
+
+uint32 ActivityLeaseRemaining(PlayerbotActivityLeaseState const& state, uint64 now)
+{
+    if (!state.active || state.expiresAt <= now)
+        return 0;
+    return static_cast<uint32>(std::min<uint64>(state.expiresAt - now, std::numeric_limits<uint32>::max()));
+}
+
+std::string NewActivityLeaseToken()
+{
+    return Acore::StringFormat("{:08x}{:08x}{:08x}{:08x}", rand32(), rand32(), rand32(), rand32());
+}
+
+std::optional<Response> ResolveActivityLeaseTarget(Request const& request, Player*& bot, PlayerbotAI*& botAI,
+                                                   bool requireRandomMasterless)
+{
+    bot = ObjectAccessor::FindPlayer(MakePlayerGuid(request.botGuid));
+    if (!bot)
+        return Response::Failure(ErrorCode::BotNotFound, {});
+    botAI = ResolveBotAI(bot);
+    if (!botAI)
+        return Response::Failure(ErrorCode::NotManagedPlayerbot, {});
+    if (!bot->GetSession() || !bot->IsInWorld() || bot->IsDuringRemoveFromWorld() || bot->GetSession()->isLogingOut())
+    {
+        return Response::Failure(ErrorCode::BotUnavailable, {});
+    }
+    if (requireRandomMasterless)
+    {
+        if (!sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()))
+            return Response::Failure(ErrorCode::NotRandomBot, {});
+        if (botAI->GetMaster())
+            return Response::Failure(ErrorCode::InvalidRelationship, {});
+    }
+    return std::nullopt;
+}
+
+std::string_view ActivityLeaseAcquireOutcomeName(PlayerbotActivityLeaseAcquireOutcome outcome)
+{
+    switch (outcome)
+    {
+        case PlayerbotActivityLeaseAcquireOutcome::Acquired:
+            return "acquired";
+        case PlayerbotActivityLeaseAcquireOutcome::Renewed:
+            return "renewed";
+        case PlayerbotActivityLeaseAcquireOutcome::Conflict:
+            return "conflict";
+        case PlayerbotActivityLeaseAcquireOutcome::Invalid:
+            return "invalid";
+    }
+    return "invalid";
+}
+
+std::string_view ActivityLeaseReleaseOutcomeName(PlayerbotActivityLeaseReleaseOutcome outcome)
+{
+    switch (outcome)
+    {
+        case PlayerbotActivityLeaseReleaseOutcome::Released:
+            return "released";
+        case PlayerbotActivityLeaseReleaseOutcome::AlreadyInactive:
+            return "already_inactive";
+        case PlayerbotActivityLeaseReleaseOutcome::Conflict:
+            return "conflict";
+        case PlayerbotActivityLeaseReleaseOutcome::Invalid:
+            return "invalid";
+    }
+    return "invalid";
+}
 
 uint64 RecoveryTimestampMs()
 {
@@ -796,6 +871,81 @@ void SetPlayerbotVerificationAcceptingRequests(bool accepting) { acceptingReques
 
 bool IsPlayerbotVerificationAcceptingRequests() { return acceptingRequests.load(); }
 
+Response BuildHoldActivityResponse(Request const& request)
+{
+    Player* bot = nullptr;
+    PlayerbotAI* botAI = nullptr;
+    if (std::optional<Response> failure = ResolveActivityLeaseTarget(request, bot, botAI, true))
+        return std::move(*failure);
+
+    std::string leaseToken = RequestString(request, "leaseToken");
+    if (leaseToken.empty())
+        leaseToken = NewActivityLeaseToken();
+    uint64 const now = ActivityLeaseNow();
+    PlayerbotActivityLeaseAcquireResult const result =
+        botAI->HoldActivityLease(leaseToken, static_cast<uint32>(RequestNumber(request, "durationSeconds")), now);
+    if (result.outcome == PlayerbotActivityLeaseAcquireOutcome::Conflict)
+        return Response::Failure(ErrorCode::ActivityLeaseConflict, {});
+    if (result.outcome == PlayerbotActivityLeaseAcquireOutcome::Invalid)
+        return Response::Failure(ErrorCode::InvalidActivityLease, {});
+
+    std::ostringstream out;
+    out << "{\"botGuid\":";
+    AppendJsonString(out, bot->GetGUID().ToString());
+    out << ",\"outcome\":";
+    AppendJsonString(out, std::string(ActivityLeaseAcquireOutcomeName(result.outcome)));
+    out << ",\"leaseToken\":";
+    AppendJsonString(out, result.state.token);
+    out << ",\"active\":true,\"expiresAt\":" << result.state.expiresAt;
+    out << ",\"remainingSeconds\":" << ActivityLeaseRemaining(result.state, now) << '}';
+    return Response::Success(out.str());
+}
+
+Response BuildInspectActivityLeaseResponse(Request const& request)
+{
+    Player* bot = nullptr;
+    PlayerbotAI* botAI = nullptr;
+    if (std::optional<Response> failure = ResolveActivityLeaseTarget(request, bot, botAI, false))
+        return std::move(*failure);
+
+    uint64 const now = ActivityLeaseNow();
+    PlayerbotActivityLeaseState const state = botAI->InspectActivityLease(now);
+    std::ostringstream out;
+    out << "{\"botGuid\":";
+    AppendJsonString(out, bot->GetGUID().ToString());
+    out << ",\"active\":" << (state.active ? "true" : "false");
+    out << ",\"expiresAt\":" << state.expiresAt;
+    out << ",\"remainingSeconds\":" << ActivityLeaseRemaining(state, now) << '}';
+    return Response::Success(out.str());
+}
+
+Response BuildReleaseActivityResponse(Request const& request)
+{
+    Player* bot = nullptr;
+    PlayerbotAI* botAI = nullptr;
+    if (std::optional<Response> failure = ResolveActivityLeaseTarget(request, bot, botAI, false))
+        return std::move(*failure);
+
+    uint64 const now = ActivityLeaseNow();
+    PlayerbotActivityLeaseReleaseOutcome const outcome =
+        botAI->ReleaseActivityLease(RequestString(request, "leaseToken"), now);
+    if (outcome == PlayerbotActivityLeaseReleaseOutcome::Conflict)
+        return Response::Failure(ErrorCode::ActivityLeaseConflict, {});
+    if (outcome == PlayerbotActivityLeaseReleaseOutcome::Invalid)
+        return Response::Failure(ErrorCode::InvalidActivityLease, {});
+
+    PlayerbotActivityLeaseState const state = botAI->InspectActivityLease(now);
+    std::ostringstream out;
+    out << "{\"botGuid\":";
+    AppendJsonString(out, bot->GetGUID().ToString());
+    out << ",\"outcome\":";
+    AppendJsonString(out, std::string(ActivityLeaseReleaseOutcomeName(outcome)));
+    out << ",\"active\":" << (state.active ? "true" : "false");
+    out << ",\"expiresAt\":" << state.expiresAt;
+    out << ",\"remainingSeconds\":" << ActivityLeaseRemaining(state, now) << '}';
+    return Response::Success(out.str());
+}
+
 // GM tooling: one console command, run with console authority exactly as the worldserver console
 // would, with its output captured. The parser already refused process and account administration.
 Response BuildGmCommandResponse(Request const& request)
@@ -840,6 +990,12 @@ Response ExecuteVerificationOnWorldThread(Request const& request, PlayerbotRecov
             return BuildSetSkillResponse(request);
         case Operation::TeleportToGameObject:
             return BuildTeleportToGameObjectResponse(request);
+        case Operation::HoldActivity:
+            return BuildHoldActivityResponse(request);
+        case Operation::InspectActivityLease:
+            return BuildInspectActivityLeaseResponse(request);
+        case Operation::ReleaseActivity:
+            return BuildReleaseActivityResponse(request);
         case Operation::GmCommand:
             return BuildGmCommandResponse(request);
     }

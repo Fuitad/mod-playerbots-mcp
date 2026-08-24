@@ -30,6 +30,10 @@ from playerbot_mcp.protocol import (
     ConfigurationError,
     GmCommandRequest,
     GmCommandResult,
+    HoldActivityRequest,
+    HoldActivityResult,
+    InspectActivityLeaseRequest,
+    InspectActivityLeaseResult,
     InspectRequest,
     InspectResult,
     ListRequest,
@@ -37,6 +41,8 @@ from playerbot_mcp.protocol import (
     ProtocolMismatchError,
     RecoverRequest,
     RecoveryResult,
+    ReleaseActivityRequest,
+    ReleaseActivityResult,
     ServerError,
     SetSkillRequest,
     SetSkillResult,
@@ -112,7 +118,7 @@ class VerificationSettings(BaseModel):
 
 
 class VerificationClient:
-    """Typed client for the nine verification operations."""
+    """Typed client for the thirteen verification operations."""
 
     def __init__(self, settings: VerificationSettings) -> None:
         self._settings = settings
@@ -143,6 +149,25 @@ class VerificationClient:
     def gm_command(self, *, command: str) -> GmCommandResult:
         """Runs one console command with console authority and returns its captured output."""
         return self._call(GmCommandRequest(command=command), GmCommandResult)
+
+    def hold_activity(
+        self, *, bot_guid: int, duration_seconds: int, lease_token: str | None = None
+    ) -> HoldActivityResult:
+        """Acquire or renew one bounded activity lease for a masterless random bot."""
+        request = HoldActivityRequest(
+            bot_guid=bot_guid, duration_seconds=duration_seconds, lease_token=lease_token
+        )
+        return self._call(request, HoldActivityResult)
+
+    def inspect_activity_lease(self, *, bot_guid: int) -> InspectActivityLeaseResult:
+        """Read one random bot's activity lease without exposing its ownership token."""
+        return self._call(InspectActivityLeaseRequest(bot_guid=bot_guid), InspectActivityLeaseResult)
+
+    def release_activity(self, *, bot_guid: int, lease_token: str) -> ReleaseActivityResult:
+        """Idempotently release the activity lease owned by one exact token."""
+        return self._call(
+            ReleaseActivityRequest(bot_guid=bot_guid, lease_token=lease_token), ReleaseActivityResult
+        )
 
     def set_skill(self, *, bot_guid: int, skill_id: int, value: int, maximum: int) -> SetSkillResult:
         """Verification staging: overwrite one skill the bot already knows."""

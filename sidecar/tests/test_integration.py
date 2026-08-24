@@ -248,6 +248,38 @@ class TestHappyPath:
         assert result.baseline_action_sequence == 7
         assert result.baseline_economy_sequence == 88
 
+    def test_activity_lease_calls_round_trip_with_ownership_and_inspection(self) -> None:
+        lease_token = "b" * 32
+
+        def handler(request: dict[str, Any]) -> bytes:
+            common = {
+                "botGuid": "0x0000000000000003",
+                "active": request["operation"] != "release_activity",
+                "expiresAt": 1_700_002_400 if request["operation"] != "release_activity" else 0,
+                "remainingSeconds": 2400 if request["operation"] != "release_activity" else 0,
+            }
+            if request["operation"] == "hold_activity":
+                common |= {"outcome": "acquired", "leaseToken": lease_token}
+            elif request["operation"] == "release_activity":
+                common |= {"outcome": "released"}
+            return json.dumps(envelope(request["requestId"], common)).encode()
+
+        with FakeVerificationServer(handler) as server:
+            client = make_client(server.port)
+            held = client.hold_activity(bot_guid=3, duration_seconds=2400)
+            inspected = client.inspect_activity_lease(bot_guid=3)
+            released = client.release_activity(bot_guid=3, lease_token=held.lease_token)
+
+        assert held.lease_token == lease_token
+        assert held.outcome == "acquired"
+        assert inspected.active is True
+        assert released.outcome == "released"
+        assert [request["operation"] for request in server.requests] == [
+            "hold_activity",
+            "inspect_activity_lease",
+            "release_activity",
+        ]
+
     def test_each_call_uses_a_fresh_connection_and_a_fresh_request_id(self) -> None:
         with FakeVerificationServer(responder(STATUS_RESULT)) as server:
             client = make_client(server.port)
@@ -584,6 +616,43 @@ class TestToolsOverTheWire:
         assert result.structured_content["output"] == "Teleported.\n"
         assert [request["operation"] for request in server.requests] == ["gm_command"]
         assert server.requests[0]["command"] == ".tele name Bot brill"
+
+    @pytest.mark.anyio
+    async def test_activity_lease_tools_acquire_inspect_and_release_one_bot(self) -> None:
+        lease_token = "c" * 32
+
+        def handler(request: dict[str, Any]) -> bytes:
+            common = {
+                "botGuid": "0x0000000000000003",
+                "active": request["operation"] != "release_activity",
+                "expiresAt": 1_700_002_400 if request["operation"] != "release_activity" else 0,
+                "remainingSeconds": 2400 if request["operation"] != "release_activity" else 0,
+            }
+            if request["operation"] == "hold_activity":
+                common |= {"outcome": "acquired", "leaseToken": lease_token}
+            elif request["operation"] == "release_activity":
+                common |= {"outcome": "released"}
+            return json.dumps(envelope(request["requestId"], common)).encode()
+
+        with FakeVerificationServer(handler) as server:
+            async with Client(make_mcp_server(server.port)) as client:
+                held = await client.call_tool("hold_bot_activity", {"bot_guid": 3, "duration_seconds": 2400})
+                inspected = await client.call_tool("inspect_bot_activity_lease", {"bot_guid": 3})
+                released = await client.call_tool(
+                    "release_bot_activity", {"bot_guid": 3, "lease_token": lease_token}
+                )
+
+        assert held.structured_content is not None
+        assert held.structured_content["leaseToken"] == lease_token
+        assert inspected.structured_content is not None
+        assert inspected.structured_content["active"] is True
+        assert released.structured_content is not None
+        assert released.structured_content["outcome"] == "released"
+        assert [request["operation"] for request in server.requests] == [
+            "hold_activity",
+            "inspect_activity_lease",
+            "release_activity",
+        ]
 
     @pytest.mark.anyio
     async def test_recover_bot_calls_only_the_narrow_recovery_operation(self) -> None:
@@ -1152,11 +1221,14 @@ class TestStdioAdapter:
             "list_bots",
             "inspect_bot",
             "inspect_bot_loops",
+            "inspect_bot_activity_lease",
             "wait_for_bot",
             "send_bot_command",
             "set_bot_skill",
             "teleport_bot_to_gameobject",
             "run_gm_command",
+            "hold_bot_activity",
+            "release_bot_activity",
             "recover_bot",
         }
         assert result.structured_content is not None
