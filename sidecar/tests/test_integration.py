@@ -167,7 +167,7 @@ def responder(result: dict[str, Any]) -> Handler:
 
 STATUS_RESULT: dict[str, Any] = {
     "protocolSchemaVersion": 2,
-    "inspectionSchemaVersion": 4,
+    "inspectionSchemaVersion": 5,
     "moduleEnabled": True,
     "queueAvailable": True,
     "queueSize": 3,
@@ -213,6 +213,7 @@ class TestHappyPath:
         assert result.identity.name == "Grimtusk"
         assert result.finance.money_copper == 123_456_789
         assert result.economy.outcome == "operation"
+        assert result.travel.destination is not None
         assert result.travel.destination.title == "Botanist Tyniarrel"
         assert result.travel.route.next_point.map_id == 530
         assert result.travel.last_movement.priority == "forced"
@@ -376,6 +377,20 @@ class TestServerErrors:
 
 
 class TestProtocolFaults:
+    @pytest.mark.parametrize("inspection_schema", [4, 6])
+    def test_inspection_result_schema_mismatch_is_a_stable_protocol_error(
+        self, inspection_schema: int
+    ) -> None:
+        payload = inspection_payload()
+        payload["schemaVersion"] = inspection_schema
+        with (
+            FakeVerificationServer(responder(payload)) as server,
+            pytest.raises(ProtocolMismatchError) as caught,
+        ):
+            make_client(server.port).inspect(bot_guid=3)
+
+        assert str(caught.value) == "The response result does not match InspectResult: 1 problem(s)."
+
     def test_a_frame_shorter_than_its_header_claims_is_refused(self) -> None:
         def handler(request: dict[str, Any]) -> RawFrame:
             body = json.dumps(envelope(request["requestId"], STATUS_RESULT)).encode()
@@ -542,6 +557,10 @@ class TestToolsOverTheWire:
         assert result.structured_content["identity"]["name"] == "Grimtusk"
         assert result.structured_content["finance"]["moneyCopper"] == 123_456_789
         assert result.structured_content["rpgTarget"]["name"] == "Defilers Emissary"
+        assert result.structured_content["movement"]["canMove"] is True
+        assert result.structured_content["recovery"]["corpse"]["present"] is False
+        assert result.structured_content["equipment"]["items"][0]["maximumDurability"] == 80
+        assert result.structured_content["economy"]["observedAt"] == 1_700_000_450
 
     @pytest.mark.anyio
     async def test_inspect_bot_loops_returns_actionable_serverwide_records(self) -> None:
@@ -764,7 +783,7 @@ class TestToolsOverTheWire:
         assert TOKEN not in json.dumps(result.structured_content)
 
     @pytest.mark.anyio
-    async def test_recover_bot_maps_invalid_server_result_without_copying_it(self) -> None:
+    async def test_recover_bot_maps_invalid_server_result_to_protocol_mismatch(self) -> None:
         invalid = recovery_result(outcome="recovered", reason="character_offline", unsafe=TOKEN)
         with FakeVerificationServer(responder(invalid)) as server:
             async with Client(make_mcp_server(server.port)) as client:
@@ -772,7 +791,7 @@ class TestToolsOverTheWire:
 
         assert result.structured_content is not None
         assert result.structured_content["outcome"] == "recovery_failed"
-        assert result.structured_content["reason"] == "invalid_server_response"
+        assert result.structured_content["reason"] == "protocol_mismatch"
         assert TOKEN not in json.dumps(result.structured_content)
 
 

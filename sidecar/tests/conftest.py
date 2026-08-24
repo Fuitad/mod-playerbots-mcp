@@ -54,7 +54,7 @@ def latest_attempt(
 def inspection_payload(**overrides: Any) -> dict[str, Any]:
     """Builds a complete verification inspection exactly as the C++ serializer emits it."""
     payload: dict[str, Any] = {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
         "ok": True,
         "identity": {
             "guid": "0x0000000000000003",
@@ -89,16 +89,18 @@ def inspection_payload(**overrides: Any) -> dict[str, Any]:
             "movementState": "moving",
         },
         "transport": {"attached": False, "guid": "", "entry": 0},
+        "movement": {"canMove": True},
         "travel": {
             "available": True,
             "status": "travel",
+            "idleNoDestination": False,
             "destination": {
                 "type": "RpgTravelDestination",
                 "title": "Botanist Tyniarrel",
                 "distanceYards": 311.18,
             },
+            "timeLeftMs": 45_000,
             "forced": True,
-            "canMove": True,
             "route": {
                 "pointCount": 8,
                 "nextPathType": "walk",
@@ -124,6 +126,32 @@ def inspection_payload(**overrides: Any) -> dict[str, Any]:
                 "ageMs": 5100,
                 "delayMs": 5000,
                 "priority": "forced",
+            },
+        },
+        "recovery": {
+            "observedAtMs": 1_700_000_500_000,
+            "currentDeathGeneration": 4,
+            "alive": True,
+            "ghost": False,
+            "inArena": False,
+            "corpse": {
+                "present": False,
+                "loaded": False,
+                "mapId": None,
+                "distanceYards": None,
+                "sameMap": False,
+                "withinReclaimRadius": False,
+                "reclaimDelayRemainingSeconds": None,
+                "reclaimReady": False,
+            },
+            "latestRevive": {
+                "available": True,
+                "timestampMs": 1_700_000_499_000,
+                "ageMs": 1_000,
+                "attemptGeneration": 4,
+                "currentCycle": True,
+                "success": True,
+                "aliveAfter": True,
             },
         },
         "rpgTarget": {
@@ -158,6 +186,7 @@ def inspection_payload(**overrides: Any) -> dict[str, Any]:
         "economy": {
             "available": True,
             "sequence": 88,
+            "observedAt": 1_700_000_450,
             "phase": "buy_reagent",
             "outcome": "operation",
             "chainPublicId": "chn_0123456789abcdef",
@@ -174,7 +203,17 @@ def inspection_payload(**overrides: Any) -> dict[str, Any]:
             "quarantined": False,
         },
         "equipment": {
-            "items": [{"slot": 0, "itemId": 12640, "name": "Lionheart Helm", "count": 1}],
+            "items": [
+                {
+                    "slot": 0,
+                    "itemId": 12640,
+                    "name": "Lionheart Helm",
+                    "count": 1,
+                    "durability": 80,
+                    "maximumDurability": 80,
+                    "broken": False,
+                }
+            ],
             "completeness": completeness(1, 1, False),
         },
         "inventory": {

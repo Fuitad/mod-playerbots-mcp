@@ -13,7 +13,7 @@ import threading
 import time
 from collections.abc import Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from playerbot_mcp.protocol import (
     FRAME_HEADER_BYTES,
@@ -216,7 +216,13 @@ class VerificationClient:
         if envelope.error is not None:
             raise ServerError(envelope.error.code, envelope.error.message)
         assert envelope.result is not None  # parse_envelope rejects a success with no result
-        return result_model.model_validate(envelope.result)
+        try:
+            return result_model.model_validate(envelope.result)
+        except ValidationError as error:
+            raise ProtocolMismatchError(
+                f"The response result does not match {result_model.__name__}: "
+                f"{error.error_count()} problem(s)."
+            ) from error
 
     def _exchange(
         self, payload: bytes, *, deadline: float | None = None, timeout: float | None = None

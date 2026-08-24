@@ -760,14 +760,15 @@ Response BuildTeleportToGameObjectResponse(Request const& request)
     if (!nearest)
         return Response::Failure(ErrorCode::GameObjectNotFound, {});
 
-    PlayerbotRecoveryResetStuckState(botAI);
-    bot->m_taxi.ClearTaxiDestinations();
     // Two yards in front of the node keeps the bot inside interaction range without standing in it.
     float const x = nearest->posX + 2.0f * std::cos(nearest->orientation);
     float const y = nearest->posY + 2.0f * std::sin(nearest->orientation);
     bool const accepted = bot->TeleportTo(nearest->mapid, x, y, nearest->posZ, nearest->orientation);
     if (!accepted)
         return Response::Failure(ErrorCode::BotUnavailable, {});
+
+    PlayerbotRecoveryClearStuckStateWithoutHistory(botAI);
+    bot->m_taxi.ClearTaxiDestinations();
 
     std::ostringstream out;
     out << "{\"botGuid\":";

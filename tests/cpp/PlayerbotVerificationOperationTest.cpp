@@ -18,6 +18,7 @@
 #include "Bot/MCP/PlayerbotVerificationProtocol.h"
 #include "Bot/PlayerbotAI.h"
 #include "Bot/PlayerbotMgr.h"
+#include "Bot/Recovery/PlayerbotRecovery.h"
 #include "Bot/Telemetry/PlayerbotInspector.h"
 #include "Bot/Telemetry/PlayerbotTelemetryState.h"
 #include "Bot/Telemetry/PlayerbotVerificationState.h"
@@ -26,6 +27,7 @@
 #include "GameTime.h"
 #include "IntegrationTestFixture.h"
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
 #include "Script/WorldThr/PlayerbotWorldThreadProcessor.h"
 #include "TravelMgr.h"
 #include "gtest/gtest.h"
@@ -37,6 +39,15 @@ namespace
 PlayerbotVerificationState& VerificationState(PlayerbotAI* botAI)
 {
     return GetPlayerbotTelemetryStateStore().Get(botAI->GetBot()->GetGUID().GetCounter())->verification;
+}
+
+bool HasRecoveryRelapse(PlayerbotAI* botAI)
+{
+    PlayerbotLoopAnomalySnapshot const snapshot = PlayerbotRecoveryCopyAnomalies(botAI, GetTimeMS().count());
+    for (std::size_t index = 0; index < snapshot.count; ++index)
+        if (snapshot.anomalies[index].classifier == PlayerbotLoopClassifier::RecoveryRelapse)
+            return true;
+    return false;
 }
 
 constexpr std::chrono::milliseconds TEST_DEADLINE{2000};
@@ -269,6 +280,15 @@ TEST_F(PlayerbotVerificationOperationTest, ManagedBotWithoutMasterRecoversAndRep
     EXPECT_NE(repeated.resultJson.find(R"("reason":"pending_homebind")"), std::string::npos);
     EXPECT_NE(repeated.resultJson.find(R"("movementReset":false)"), std::string::npos);
     EXPECT_NE(repeated.resultJson.find(R"("persistenceState":"not_requested")"), std::string::npos);
+    EXPECT_FALSE(HasRecoveryRelapse(botAI));
+
+    bot->SetSemaphoreTeleportNear(0);
+    Response const secondAccepted =
+        ExecuteVerificationOnWorldThread(RecoveryRequest(30, 79), [&saveRequests](Player*) { ++saveRequests; });
+    ASSERT_TRUE(secondAccepted.ok);
+    EXPECT_NE(secondAccepted.resultJson.find(R"("outcome":"recovered")"), std::string::npos);
+    EXPECT_EQ(saveRequests, 2U);
+    EXPECT_TRUE(HasRecoveryRelapse(botAI));
 }
 
 TEST_F(PlayerbotVerificationOperationTest, RecoveryMapsEveryProtectedStateWithoutMutation)
@@ -332,7 +352,8 @@ TEST_F(PlayerbotVerificationOperationTest, RecoveryMapsEveryProtectedStateWithou
 TEST_F(PlayerbotVerificationOperationTest, RecoveryReportsInvalidHomebindAndTeleportRejection)
 {
     TestPlayer* invalid = AddRealPlayer(210, "InvalidHomebindBot");
-    ASSERT_NE(AddBot(invalid, nullptr), nullptr);
+    PlayerbotAI* invalidAI = AddBot(invalid, nullptr);
+    ASSERT_NE(invalidAI, nullptr);
     invalid->Relocate(100.0f, 110.0f, 120.0f, 1.0f);
     invalid->m_homebindMapId = MAPID_INVALID;
 
@@ -344,9 +365,13 @@ TEST_F(PlayerbotVerificationOperationTest, RecoveryReportsInvalidHomebindAndTele
     EXPECT_NE(invalidResponse.resultJson.find(R"("outcome":"recovery_failed")"), std::string::npos);
     EXPECT_NE(invalidResponse.resultJson.find(R"("reason":"invalid_homebind")"), std::string::npos);
     EXPECT_NE(invalidResponse.resultJson.find(R"("mutationState":"not_started")"), std::string::npos);
+    Response const repeatedInvalid = ExecuteVerificationOnWorldThread(RecoveryRequest(210));
+    ASSERT_TRUE(repeatedInvalid.ok);
+    EXPECT_FALSE(HasRecoveryRelapse(invalidAI));
 
     TestPlayer* rejected = AddRealPlayer(211, "RejectedHomebindBot");
-    ASSERT_NE(AddBot(rejected, nullptr), nullptr);
+    PlayerbotAI* rejectedAI = AddBot(rejected, nullptr);
+    ASSERT_NE(rejectedAI, nullptr);
     rejected->Relocate(100.0f, 110.0f, 120.0f, 1.0f);
     rejected->m_homebindMapId = MAP_WARSONG_GULCH;
     rejected->m_homebindX = 1500.0f;
@@ -365,6 +390,8 @@ TEST_F(PlayerbotVerificationOperationTest, RecoveryReportsInvalidHomebindAndTele
 
     Response const rejectedResponse =
         ExecuteVerificationOnWorldThread(RecoveryRequest(211), [&saveRequests](Player*) { ++saveRequests; });
+    Response const repeatedRejected =
+        ExecuteVerificationOnWorldThread(RecoveryRequest(211), [&saveRequests](Player*) { ++saveRequests; });
     if (installedBattlegroundEntry)
         sMapStore.SetEntry(MAP_WARSONG_GULCH, nullptr);
     ASSERT_TRUE(rejectedResponse.ok);
@@ -374,6 +401,9 @@ TEST_F(PlayerbotVerificationOperationTest, RecoveryReportsInvalidHomebindAndTele
     EXPECT_NE(rejectedResponse.resultJson.find(R"("mutationState":"completed")"), std::string::npos);
     EXPECT_NE(rejectedResponse.resultJson.find(R"("movementReset":true)"), std::string::npos);
     EXPECT_TRUE(rejected->m_taxi.empty());
+    ASSERT_TRUE(repeatedRejected.ok);
+    EXPECT_NE(repeatedRejected.resultJson.find(R"("reason":"teleport_rejected")"), std::string::npos);
+    EXPECT_FALSE(HasRecoveryRelapse(rejectedAI));
     EXPECT_EQ(saveRequests, 0U);
 }
 
@@ -727,6 +757,41 @@ TEST_F(PlayerbotVerificationOperationTest, TeleportToGameObjectRefusesWhenNoSpaw
     EXPECT_EQ(DispatchWithPump(request).error.code, ErrorCode::BotNotFound);
 }
 
+TEST_F(PlayerbotVerificationOperationTest, AcceptedStagingTeleportsClearStateWithoutRecordingRecovery)
+{
+    constexpr ObjectGuid::LowType SPAWN_ID = 990001;
+    constexpr uint32 GAMEOBJECT_ENTRY = 1731;
+    GameObjectData& data = sObjectMgr->NewGOData(SPAWN_ID);
+    data.spawnId = SPAWN_ID;
+    data.id = GAMEOBJECT_ENTRY;
+    data.mapid = GetTestMap()->GetId();
+    data.posX = 10.0f;
+    data.posY = 20.0f;
+    data.posZ = 30.0f;
+
+    TestPlayer* bot = AddRealPlayer(330, "StagingTeleportBot");
+    PlayerbotAI* botAI = AddBot(bot, nullptr);
+    ASSERT_NE(botAI, nullptr);
+    bot->m_taxi.AddTaxiDestination(1);
+
+    Request request = SimpleRequest(Operation::TeleportToGameObject, 330);
+    request.numbers = {{"gameObjectEntry", GAMEOBJECT_ENTRY}};
+    Response const first = ExecuteVerificationOnWorldThread(request);
+    ASSERT_TRUE(first.ok);
+    EXPECT_TRUE(bot->m_taxi.empty());
+    EXPECT_FALSE(HasRecoveryRelapse(botAI));
+
+    bot->SetSemaphoreTeleportNear(0);
+    bot->SetSemaphoreTeleportFar(0);
+    bot->m_taxi.AddTaxiDestination(1);
+    Response const second = ExecuteVerificationOnWorldThread(request);
+    sObjectMgr->DeleteGOData(SPAWN_ID);
+
+    ASSERT_TRUE(second.ok);
+    EXPECT_TRUE(bot->m_taxi.empty());
+    EXPECT_FALSE(HasRecoveryRelapse(botAI));
+}
+
 TEST_F(PlayerbotVerificationOperationTest, ShutdownQueueFullAndTimeoutProduceDistinctErrors)
 {
     TestPlayer* master = AddRealPlayer(1, "VerificationMaster");
@@ -1001,7 +1066,7 @@ TEST_F(PlayerbotVerificationOperationTest, StatusAndListReportReadinessAndGuidOr
     Response const status = DispatchWithPump(SimpleRequest(Operation::Status));
     ASSERT_TRUE(status.ok);
     EXPECT_NE(status.resultJson.find(R"("protocolSchemaVersion":2)"), std::string::npos);
-    EXPECT_NE(status.resultJson.find(R"("inspectionSchemaVersion":4)"), std::string::npos);
+    EXPECT_NE(status.resultJson.find(R"("inspectionSchemaVersion":5)"), std::string::npos);
     EXPECT_NE(status.resultJson.find(R"("moduleEnabled":true)"), std::string::npos);
     EXPECT_NE(status.resultJson.find(R"("queueAvailable":true)"), std::string::npos);
     EXPECT_NE(status.resultJson.find(R"("botCount":3)"), std::string::npos);

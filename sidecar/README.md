@@ -8,9 +8,14 @@ The C++ server listens only on `127.0.0.1`. Every request uses wire schema versi
 `PlayerbotsMCP.Port` from `mod_playerbots_mcp.conf`.
 
 The sidecar exposes status, bot listing, inspection, loop anomaly inspection, bounded waits, command dispatch, and
-guarded homebind recovery. Inspection schema version 4 includes typed read only travel route, last movement, and RPG
-target diagnostics. `inspect_bot.rpg_target` identifies the exact current target, including its GUID, entry, name,
-NPC flags, distance, and movement state. Tests use a test owned loopback server and never contact a live worldserver.
+guarded homebind recovery. Inspection schema version 5 includes typed read only movement capability, explicit idle
+travel cooldowns, corpse reclaim readiness, death generation aware revive outcomes, equipped durability, and RPG
+target diagnostics.
+An idle `NullTravelDestination` is either an active bounded cooldown or a terminal `expired` or `none` state with zero
+time left.
+`inspect_bot.rpg_target` identifies the exact current legacy RPG target, including its GUID, entry, name, NPC flags,
+distance, and movement state. It does not claim to expose New RPG internal state. Tests use a test owned loopback
+server and never contact a live worldserver.
 
 The activity lease tools acquire, inspect, renew, and release one self expiring lease for an online, masterless random
 bot. They allow a bounded monitor to bypass `AiPlayerbot.BotActiveAlone` rotation for only its selected cohort. Save

@@ -378,8 +378,21 @@ class TestStrictModels:
             StatusResult.model_validate(
                 {
                     "protocolSchemaVersion": 2,
-                    "inspectionSchemaVersion": 4,
+                    "inspectionSchemaVersion": 5,
                     "moduleEnabled": "true",
+                    "queueAvailable": True,
+                    "queueSize": 0,
+                    "botCount": 0,
+                }
+            )
+
+    def test_status_rejects_an_old_inspection_schema(self) -> None:
+        with pytest.raises(ValidationError):
+            StatusResult.model_validate(
+                {
+                    "protocolSchemaVersion": 2,
+                    "inspectionSchemaVersion": 4,
+                    "moduleEnabled": True,
                     "queueAvailable": True,
                     "queueSize": 0,
                     "botCount": 0,
@@ -389,6 +402,218 @@ class TestStrictModels:
     def test_a_missing_field_is_rejected_rather_than_defaulted(self) -> None:
         payload = inspection_payload()
         del payload["finance"]
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    def test_inspection_schema_mismatch_is_rejected(self) -> None:
+        payload = inspection_payload()
+        payload["schemaVersion"] = 4
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    def test_idle_travel_is_explicit_and_keeps_independent_movement_capability(self) -> None:
+        payload = inspection_payload()
+        payload["movement"] = {"canMove": True}
+        payload["travel"] |= {
+            "available": True,
+            "status": "cooldown",
+            "idleNoDestination": True,
+            "destination": None,
+            "timeLeftMs": 120_000,
+        }
+
+        result = InspectResult.model_validate(payload)
+
+        assert result.movement.can_move is True
+        assert result.travel.idle_no_destination is True
+        assert result.travel.destination is None
+
+        payload["travel"]["timeLeftMs"] = 0
+        assert InspectResult.model_validate(payload).travel.time_left_ms == 0
+
+        payload["travel"]["idleNoDestination"] = False
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+        payload["travel"]["idleNoDestination"] = True
+        payload["travel"]["status"] = "travel"
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+        payload["travel"]["status"] = "cooldown"
+        payload["travel"]["timeLeftMs"] = None
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+        payload["travel"]["timeLeftMs"] = 300_001
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    def test_live_null_cooldown_expiry_payload_is_a_valid_completed_idle_state(self) -> None:
+        payload = inspection_payload()
+        payload["travel"] |= {
+            "available": True,
+            "status": "none",
+            "idleNoDestination": True,
+            "destination": None,
+            "timeLeftMs": 0,
+        }
+
+        result = InspectResult.model_validate(payload)
+
+        assert result.travel.status == "none"
+        assert result.travel.idle_no_destination is True
+        assert result.travel.destination is None
+        assert result.travel.time_left_ms == 0
+
+    def test_live_expired_null_travel_payload_is_a_valid_terminal_idle_state(self) -> None:
+        payload = inspection_payload()
+        payload["travel"] |= {
+            "available": True,
+            "status": "expired",
+            "idleNoDestination": True,
+            "destination": None,
+            "timeLeftMs": 0,
+        }
+
+        result = InspectResult.model_validate(payload)
+
+        assert result.travel.status == "expired"
+        assert result.travel.idle_no_destination is True
+        assert result.travel.destination is None
+        assert result.travel.time_left_ms == 0
+
+    @pytest.mark.parametrize("status", ["travel", "work", "prepare"])
+    def test_idle_travel_rejects_non_idle_statuses(self, status: str) -> None:
+        payload = inspection_payload()
+        payload["travel"] |= {
+            "available": True,
+            "status": status,
+            "idleNoDestination": True,
+            "destination": None,
+            "timeLeftMs": 0,
+        }
+
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    @pytest.mark.parametrize("status", ["none", "expired"])
+    @pytest.mark.parametrize("time_left_ms", [None, 1])
+    def test_terminal_idle_travel_requires_exactly_zero_time(
+        self, status: str, time_left_ms: int | None
+    ) -> None:
+        payload = inspection_payload()
+        payload["travel"] |= {
+            "available": True,
+            "status": status,
+            "idleNoDestination": True,
+            "destination": None,
+            "timeLeftMs": time_left_ms,
+        }
+
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    @pytest.mark.parametrize("status", ["none", "expired"])
+    def test_idle_travel_rejects_a_destination_even_after_cooldown_expiry(self, status: str) -> None:
+        payload = inspection_payload()
+        payload["travel"] |= {
+            "available": True,
+            "status": status,
+            "idleNoDestination": True,
+            "timeLeftMs": 0,
+        }
+
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    def test_non_idle_none_state_still_requires_a_destination(self) -> None:
+        payload = inspection_payload()
+        payload["travel"] |= {
+            "available": True,
+            "status": "none",
+            "idleNoDestination": False,
+            "destination": None,
+            "timeLeftMs": 0,
+        }
+
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    def test_recovery_requires_truthful_corpse_and_revive_details(self) -> None:
+        payload = inspection_payload()
+        payload["recovery"] = {
+            "observedAtMs": 1_700_000_001_000,
+            "currentDeathGeneration": 8,
+            "alive": False,
+            "ghost": True,
+            "inArena": False,
+            "corpse": {
+                "present": True,
+                "loaded": True,
+                "mapId": 0,
+                "distanceYards": 12.5,
+                "sameMap": True,
+                "withinReclaimRadius": True,
+                "reclaimDelayRemainingSeconds": 0,
+                "reclaimReady": True,
+            },
+            "latestRevive": {
+                "available": True,
+                "timestampMs": 1_700_000_000_000,
+                "ageMs": 1_000,
+                "attemptGeneration": 7,
+                "currentCycle": False,
+                "success": False,
+                "aliveAfter": False,
+            },
+        }
+
+        result = InspectResult.model_validate(payload)
+
+        assert result.recovery.corpse.reclaim_ready is True
+        assert result.recovery.latest_revive.alive_after is False
+
+        payload["recovery"]["corpse"]["reclaimReady"] = False
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+        payload["recovery"]["corpse"]["reclaimReady"] = True
+        payload["recovery"]["corpse"]["reclaimDelayRemainingSeconds"] = 10
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+        payload["recovery"]["corpse"]["reclaimDelayRemainingSeconds"] = 0
+        payload["recovery"]["alive"] = True
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+        payload = inspection_payload()
+        payload["recovery"]["latestRevive"]["currentCycle"] = False
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+        payload = inspection_payload()
+        payload["recovery"]["latestRevive"]["ageMs"] = 999
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+        payload = inspection_payload()
+        payload["recovery"]["ghost"] = True
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    def test_equipment_broken_state_must_match_durability(self) -> None:
+        payload = inspection_payload()
+        payload["equipment"]["items"][0] |= {
+            "durability": 0,
+            "maximumDurability": 80,
+            "broken": True,
+        }
+        result = InspectResult.model_validate(payload)
+        assert result.equipment.items[0].broken is True
+
+        payload["equipment"]["items"][0]["broken"] = False
         with pytest.raises(ValidationError):
             InspectResult.model_validate(payload)
 

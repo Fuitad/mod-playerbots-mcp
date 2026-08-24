@@ -320,7 +320,9 @@ def build_server(client: VerificationClient) -> MCPServer:
     @server.tool(
         annotations=READ_ONLY,
         description=(
-            "Return the full verification snapshot, including exact RPG target diagnostics, for one bot."
+            "Return one full verification snapshot with movement capability, TravelMgr idle state, corpse "
+            "reclaim readiness, revive outcome, equipment durability, Economy observation time, and exact "
+            "legacy RPG target diagnostics."
         ),
     )
     async def inspect_bot(bot_guid: int) -> InspectResult:

@@ -18,10 +18,15 @@ mod-playerbots-recovery. It does not store MCP transport or protocol code in mod
 
 ## Travel diagnostics
 
-`inspect_bot` includes a typed `travel` section in inspection schema version 4. It is read only and reports the
-ordinary Playerbot travel state that already exists on the world thread.
+`inspect_bot` includes typed `movement` and `travel` sections in inspection schema version 5. They are read only and
+report the ordinary Playerbot travel state that already exists on the world thread.
 
-* `status`, `destination`, `forced`, and `canMove` describe the active travel target and whether the bot can move.
+* `movement.canMove` reports the actual Playerbot movement capability independently from TravelMgr.
+* `travel.status`, `travel.destination`, and `travel.forced` describe the active TravelMgr target.
+* `travel.idleNoDestination` is true for `NullTravelDestination`. The destination is null while status and
+  `timeLeftMs` preserve the actual idle cooldown state. Active idle state uses cooldown status with a remaining value
+  between zero and five minutes. After expiry, truthful terminal states are expired or none with exactly zero
+  milliseconds.
 * `route.pointCount` reports the retained route size.
 * `route.nextPathType`, `route.nextEntry`, and `route.nextPoint` report the next point selected by the ordinary travel
   route logic. An unavailable next point is explicit through `nextPoint.available`.
@@ -33,7 +38,7 @@ change on the next world update.
 
 ## RPG target diagnostics
 
-`inspect_bot` includes the required `rpgTarget` section in inspection schema version 4. Agents should read this
+`inspect_bot` includes the required `rpgTarget` section in inspection schema version 5. Agents should read this
 section instead of inferring an RPG target from the last action, nearby NPCs, or the ordinary `travel` section.
 
 * `available` states whether the current `"rpg target"` AI value resolves to a live world object.
@@ -45,6 +50,24 @@ section instead of inferring an RPG target from the last action, nearby NPCs, or
 When `available` is false, every detail field is null. The typed Python result exposes the same section as
 `rpg_target`, with fields such as `npc_flags` and `distance_yards`. The section is observational only. It does not
 select, clear, or move toward a target.
+
+## Recovery and equipment diagnostics
+
+Inspection schema version 5 reports the state needed to verify death recovery without treating an attempted packet
+as success.
+
+* `recovery.alive`, `recovery.ghost`, and `recovery.inArena` report the current player state.
+* `recovery.corpse` reports presence, loaded state, map, same map distance, reclaim radius, remaining reclaim delay,
+  and authoritative reclaim readiness. The readiness flag must equal all encoded core conditions, so false is also a
+  validated result rather than an unchecked default.
+* `recovery.latestRevive` reports the latest revive action timestamp in milliseconds since server start, success, and
+  whether the action left the bot alive. It also reports age, attempt generation, and whether the attempt belongs to
+  the current physical death cycle. An unavailable result carries zero and false values.
+* Every equipped item reports current durability, maximum durability, and a derived broken state.
+* `economy.observedAt` reports when the current Economy observation was produced in epoch seconds.
+
+The `rpgTarget` section remains the legacy `"rpg target"` AI value. It does not claim to expose New RPG internal
+state.
 
 ## Random bot activity leases
 

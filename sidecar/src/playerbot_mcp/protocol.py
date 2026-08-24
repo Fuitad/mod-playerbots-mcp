@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from pydantic.alias_generators import to_camel
 
 SCHEMA_VERSION = 2
-INSPECTION_SCHEMA_VERSION = 4
+INSPECTION_SCHEMA_VERSION = 5
 FRAME_HEADER_BYTES = 4
 MAX_FRAME_PAYLOAD_BYTES = 64 * 1024
 MAX_RESPONSE_PAYLOAD_BYTES = 60 * 1024
@@ -26,6 +26,7 @@ MIN_TOKEN_BYTES = 32
 MAX_LIST_LIMIT = 100
 MAX_ANOMALY_LIMIT = 50
 MAX_ACTIVITY_LEASE_SECONDS = 45 * 60
+MAX_IDLE_TRAVEL_COOLDOWN_MS = 5 * 60 * 1000
 ACTIVITY_LEASE_TOKEN_PATTERN = r"^[0-9a-f]{32}$"
 
 UINT32_MAX = 0xFFFFFFFF
@@ -393,6 +394,14 @@ class StatusResult(WireModel):
     queue_size: int
     bot_count: int
 
+    @model_validator(mode="after")
+    def schemas_are_supported(self) -> StatusResult:
+        if self.protocol_schema_version != SCHEMA_VERSION:
+            raise ValueError(f"Protocol schema must be {SCHEMA_VERSION}.")
+        if self.inspection_schema_version != INSPECTION_SCHEMA_VERSION:
+            raise ValueError(f"Inspection schema must be {INSPECTION_SCHEMA_VERSION}.")
+        return self
+
 
 class MasterSummary(WireModel):
     available: bool
@@ -508,6 +517,10 @@ class Transport(WireModel):
     entry: int
 
 
+class Movement(WireModel):
+    can_move: bool
+
+
 class TravelPoint(WireModel):
     available: bool
     map_id: int
@@ -520,7 +533,7 @@ class TravelPoint(WireModel):
 class TravelDestination(WireModel):
     type: str
     title: str
-    distance_yards: float
+    distance_yards: float | None = Field(ge=0)
 
 
 class TravelRoute(WireModel):
@@ -540,11 +553,138 @@ class LastMovement(WireModel):
 class Travel(WireModel):
     available: bool
     status: Literal["unavailable", "none", "prepare", "travel", "work", "cooldown", "expired", "unknown"]
-    destination: TravelDestination
+    idle_no_destination: bool
+    destination: TravelDestination | None
+    time_left_ms: int | None = Field(ge=0)
     forced: bool
-    can_move: bool
     route: TravelRoute
     last_movement: LastMovement
+
+    @model_validator(mode="after")
+    def availability_matches_destination(self) -> Travel:
+        if not self.available:
+            if self.status != "unavailable" or self.idle_no_destination or self.destination is not None:
+                raise ValueError("Unavailable travel cannot claim a status or destination.")
+            if self.time_left_ms is not None:
+                raise ValueError("Unavailable travel cannot claim remaining time.")
+            return self
+
+        if self.idle_no_destination:
+            if self.destination is not None:
+                raise ValueError("Idle travel cannot claim a destination.")
+            if self.status in {"none", "expired"}:
+                if self.time_left_ms != 0:
+                    raise ValueError("Terminal idle travel requires zero remaining cooldown.")
+                return self
+            if self.status != "cooldown":
+                raise ValueError("Idle travel requires cooldown, expired, or completed none status.")
+            if self.time_left_ms is None or self.time_left_ms > MAX_IDLE_TRAVEL_COOLDOWN_MS:
+                raise ValueError("Idle travel requires a bounded remaining cooldown.")
+            return self
+
+        if self.destination is None:
+            raise ValueError("Available travel requires either a destination or explicit idle state.")
+        return self
+
+
+class CorpseState(WireModel):
+    present: bool
+    loaded: bool
+    map_id: int | None = Field(ge=0, le=UINT32_MAX)
+    distance_yards: float | None = Field(ge=0)
+    same_map: bool
+    within_reclaim_radius: bool
+    reclaim_delay_remaining_seconds: int | None = Field(ge=0)
+    reclaim_ready: bool
+
+    @model_validator(mode="after")
+    def presence_matches_details(self) -> CorpseState:
+        if not self.present:
+            if (
+                self.loaded
+                or self.map_id is not None
+                or self.distance_yards is not None
+                or self.same_map
+                or self.within_reclaim_radius
+            ):
+                raise ValueError("An absent corpse cannot claim location or loaded state.")
+            if self.reclaim_delay_remaining_seconds is not None or self.reclaim_ready:
+                raise ValueError("An absent corpse cannot claim reclaim state.")
+            return self
+
+        if self.map_id is None:
+            raise ValueError("A present corpse requires its map.")
+        if self.same_map != (self.distance_yards is not None):
+            raise ValueError("Corpse distance is available exactly when the corpse is on the bot map.")
+        if self.loaded != (self.reclaim_delay_remaining_seconds is not None):
+            raise ValueError("Corpse reclaim delay is available exactly when the corpse is loaded.")
+        if self.within_reclaim_radius and not (self.loaded and self.same_map):
+            raise ValueError("A corpse can be within reclaim radius only when loaded on the bot map.")
+        return self
+
+
+class LatestRevive(WireModel):
+    available: bool
+    timestamp_ms: int = Field(ge=0)
+    age_ms: int = Field(ge=0)
+    attempt_generation: int = Field(ge=0)
+    current_cycle: bool
+    success: bool
+    alive_after: bool
+
+    @model_validator(mode="after")
+    def availability_matches_outcome(self) -> LatestRevive:
+        if not self.available and (
+            self.timestamp_ms != 0
+            or self.age_ms != 0
+            or self.attempt_generation != 0
+            or self.current_cycle
+            or self.success
+            or self.alive_after
+        ):
+            raise ValueError("An unavailable revive outcome cannot claim result details.")
+        if self.success and not self.alive_after:
+            raise ValueError("A successful revive outcome must leave the bot alive.")
+        return self
+
+
+class Recovery(WireModel):
+    observed_at_ms: int = Field(ge=0)
+    current_death_generation: int = Field(ge=0)
+    alive: bool
+    ghost: bool
+    in_arena: bool
+    corpse: CorpseState
+    latest_revive: LatestRevive
+
+    @model_validator(mode="after")
+    def reclaim_readiness_matches_player_state(self) -> Recovery:
+        if self.alive and self.ghost:
+            raise ValueError("A living bot cannot be a ghost.")
+        expected_reclaim_ready = (
+            not self.alive
+            and not self.in_arena
+            and self.ghost
+            and self.corpse.present
+            and self.corpse.loaded
+            and self.corpse.same_map
+            and self.corpse.within_reclaim_radius
+            and self.corpse.reclaim_delay_remaining_seconds == 0
+        )
+        if self.corpse.reclaim_ready != expected_reclaim_ready:
+            raise ValueError("Corpse reclaim readiness does not match the encoded core conditions.")
+        expected_current_cycle = (
+            self.latest_revive.available
+            and self.latest_revive.attempt_generation == self.current_death_generation
+        )
+        if self.latest_revive.current_cycle != expected_current_cycle:
+            raise ValueError("Revive cycle freshness does not match the death generation.")
+        if self.latest_revive.available:
+            if self.latest_revive.timestamp_ms > self.observed_at_ms:
+                raise ValueError("A revive outcome cannot come from the future.")
+            if self.latest_revive.age_ms != self.observed_at_ms - self.latest_revive.timestamp_ms:
+                raise ValueError("Revive age must match the inspection timestamp.")
+        return self
 
 
 class RpgTarget(WireModel):
@@ -616,6 +756,7 @@ class Career(WireModel):
 class Economy(WireModel):
     available: bool
     sequence: int
+    observed_at: int = Field(ge=0)
     phase: Literal[
         "none",
         "collect_auction_mail",
@@ -663,6 +804,18 @@ class EquipmentItem(WireModel):
     item_id: int
     name: str
     count: int
+    durability: int = Field(ge=0)
+    maximum_durability: int = Field(ge=0)
+    broken: bool
+
+    @model_validator(mode="after")
+    def broken_matches_durability(self) -> EquipmentItem:
+        expected = self.maximum_durability > 0 and self.durability == 0
+        if self.broken != expected:
+            raise ValueError("Broken equipment must match its durability fields.")
+        if self.durability > self.maximum_durability:
+            raise ValueError("Equipment durability cannot exceed its maximum.")
+        return self
 
 
 class InventoryItem(WireModel):
@@ -701,7 +854,9 @@ class InspectResult(WireModel):
     group: GroupSummary
     position: Position
     transport: Transport
+    movement: Movement
     travel: Travel
+    recovery: Recovery
     rpg_target: RpgTarget
     action: ActionSection
     finance: Finance
@@ -712,6 +867,15 @@ class InspectResult(WireModel):
     inventory: InventoryCollection
     skills: SkillCollection
     professions: SkillCollection
+
+    @model_validator(mode="after")
+    def schema_is_supported(self) -> InspectResult:
+        if self.schema_version != INSPECTION_SCHEMA_VERSION:
+            raise ValueError(
+                f"Inspection schema {self.schema_version} is not supported; "
+                f"expected {INSPECTION_SCHEMA_VERSION}."
+            )
+        return self
 
 
 class CheckResult(WireModel):
