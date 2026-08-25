@@ -840,7 +840,7 @@ class TestToolSurface:
         return build_server(VerificationClient(settings))
 
     @pytest.mark.anyio
-    async def test_exactly_the_thirteen_planned_tools_are_exposed(self) -> None:
+    async def test_exactly_the_fourteen_planned_tools_are_exposed(self) -> None:
         async with Client(self._server()) as client:
             listed = await client.list_tools()
         assert {tool.name for tool in listed.tools} == {
@@ -854,6 +854,7 @@ class TestToolSurface:
             "set_bot_skill",
             "teleport_bot_to_gameobject",
             "run_gm_command",
+            "reload_config",
             "hold_bot_activity",
             "release_bot_activity",
             "recover_bot",

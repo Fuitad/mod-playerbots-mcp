@@ -45,6 +45,9 @@ enum class ErrorCode
     InvalidGuid,
     InvalidLimit,
     InvalidCommand,
+    // The command parsed fine and was declined on policy. Distinct from InvalidCommand so a
+    // caller can tell "this is off limits" from "you got the syntax wrong" and stop rephrasing.
+    CommandRefused,
     InvalidCondition,
     UnsupportedDestination,
     ResponseTooLarge,
@@ -99,12 +102,34 @@ enum class Operation
     InspectActivityLease,
     ReleaseActivity,
     // Runs one console command with console authority on the world thread and returns its output.
-    GmCommand
+    GmCommand,
+    /*
+     * Re-reads worldserver.conf and every module config, exactly as `.reload config` does.
+     *
+     * First class rather than a string through GmCommand because it is the one console command an
+     * operator reaches for routinely: applying a config edit without stopping the process. A typed
+     * operation is greppable, cannot be typo'd into something else, and gives the caller a real
+     * success flag instead of scraped console text.
+     */
+    ReloadConfig
 };
 
-// The console command families the bridge refuses outright: process lifecycle and account
-// administration are not verification tooling. The check ignores a leading dot and surrounding
-// whitespace and matches the first word only.
+/*
+ * The console command families this bridge declines: process lifecycle (`server`, `quit`, `exit`)
+ * and account administration (`account`).
+ *
+ * The caller is an agent rather than a person, and those four families are the ones whose blast
+ * radius is the running server itself. Stopping the worldserver through here would also bypass the
+ * protected account guard that gates every other path to the same action. Nothing in verification,
+ * inspection, activity leases, or recovery needs them.
+ *
+ * This is NOT a general safety boundary and must not be read as one. It matches the first word
+ * only, so `.ban`, `.unban`, and `.character deleted delete` all pass through and do exactly what
+ * they say. The line is drawn at "can end the session that is running right now", not at
+ * "destructive": a ban is reversible, a stopped worldserver mid session is not.
+ *
+ * Ignores a leading dot and surrounding whitespace, and compares case insensitively.
+ */
 bool IsRefusedGmCommand(std::string_view command);
 
 enum class RecoveryDestination

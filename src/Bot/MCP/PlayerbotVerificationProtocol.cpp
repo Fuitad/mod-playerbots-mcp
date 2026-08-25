@@ -54,6 +54,10 @@ ProtocolError MakeError(ErrorCode code)
             return {code, "The list limit must be from 1 through 100."};
         case ErrorCode::InvalidCommand:
             return {code, "The command is invalid."};
+        case ErrorCode::CommandRefused:
+            return {code,
+                    "The command is refused: process lifecycle and account administration are outside "
+                    "this bridge. Run it at the worldserver console instead."};
         case ErrorCode::InvalidCondition:
             return {code, "The check condition is invalid."};
         case ErrorCode::UnsupportedDestination:
@@ -696,6 +700,8 @@ char const* PlayerbotVerification::ErrorCodeName(ErrorCode code)
             return "invalid_limit";
         case ErrorCode::InvalidCommand:
             return "invalid_command";
+        case ErrorCode::CommandRefused:
+            return "command_refused";
         case ErrorCode::InvalidCondition:
             return "invalid_condition";
         case ErrorCode::UnsupportedDestination:
@@ -1261,10 +1267,19 @@ RequestParseResult PlayerbotVerification::ParseRequestPayload(std::string const&
         if (!HasExactFields(*fields, CommonFields({"command"})))
             return {.error = MakeError(ErrorCode::MalformedRequest)};
         std::optional<std::string> command = StringField(*fields, "command");
-        if (!command || command->empty() || IsRefusedGmCommand(*command))
+        if (!command || command->empty())
             return {.error = MakeError(ErrorCode::InvalidCommand)};
+        if (IsRefusedGmCommand(*command))
+            return {.error = MakeError(ErrorCode::CommandRefused)};
         request.operation = Operation::GmCommand;
         request.command = std::move(*command);
+        return {.request = std::move(request)};
+    }
+    if (*operationName == "reload_config")
+    {
+        if (!HasExactFields(*fields, CommonFields({})))
+            return {.error = MakeError(ErrorCode::MalformedRequest)};
+        request.operation = Operation::ReloadConfig;
         return {.request = std::move(request)};
     }
     if (*operationName == "check")

@@ -28,6 +28,7 @@
 #include "Chat.h"
 #include "DBCStores.h"
 #include "GameTime.h"
+#include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "PlayerbotAIConfig.h"
@@ -969,6 +970,22 @@ Response BuildGmCommandResponse(Request const& request)
     return Response::Success(out.str());
 }
 
+/*
+ * Re-reads every config file and republishes what the world derives from them.
+ *
+ * The pair of calls, and their order, is lifted from core's own HandleReloadConfigCommand
+ * (cs_reload.cpp): visibility distances are computed from config at load, so reloading the
+ * settings without refreshing them leaves the world running on the previous values. Running on the
+ * world thread is what makes both safe.
+ */
+Response BuildReloadConfigResponse()
+{
+    LOG_INFO("server.loading", "Reloading config settings...");
+    sWorld->LoadConfigSettings(true);
+    sMapMgr->InitializeVisibilityDistanceInfo();
+    return Response::Success(R"({"reloaded":true})");
+}
+
 Response ExecuteVerificationOnWorldThread(Request const& request, PlayerbotRecoveryPersistence recoveryPersistence)
 {
     switch (request.operation)
@@ -999,6 +1016,8 @@ Response ExecuteVerificationOnWorldThread(Request const& request, PlayerbotRecov
             return BuildReleaseActivityResponse(request);
         case Operation::GmCommand:
             return BuildGmCommandResponse(request);
+        case Operation::ReloadConfig:
+            return BuildReloadConfigResponse();
     }
     return Response::Failure(ErrorCode::UnknownOperation, {});
 }

@@ -43,6 +43,8 @@ from playerbot_mcp.protocol import (
     RecoveryResult,
     ReleaseActivityRequest,
     ReleaseActivityResult,
+    ReloadConfigRequest,
+    ReloadConfigResult,
     ServerError,
     SetSkillRequest,
     SetSkillResult,
@@ -149,6 +151,10 @@ class VerificationClient:
     def gm_command(self, *, command: str) -> GmCommandResult:
         """Runs one console command with console authority and returns its captured output."""
         return self._call(GmCommandRequest(command=command), GmCommandResult)
+
+    def reload_config(self) -> ReloadConfigResult:
+        """Re-reads worldserver.conf and every module config on the world thread."""
+        return self._call(ReloadConfigRequest(), ReloadConfigResult)
 
     def hold_activity(
         self, *, bot_guid: int, duration_seconds: int, lease_token: str | None = None

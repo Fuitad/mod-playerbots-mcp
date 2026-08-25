@@ -49,6 +49,7 @@ from playerbot_mcp.protocol import (
     RecoveryResult,
     ReleaseActivityRequest,
     ReleaseActivityResult,
+    ReloadConfigResult,
     ServerError,
     SetSkillRequest,
     SetSkillResult,
@@ -546,14 +547,37 @@ def build_server(client: VerificationClient) -> MCPServer:
     @server.tool(
         annotations=MUTATING,
         description=(
-            "GM tooling: run one worldserver console command with console authority (for example "
-            ".tele name <bot> <location>, .go xyz <x> <y> <z> <map>, .npc info) and return its "
-            "captured output. Server lifecycle and account administration commands are refused."
+            "GM tooling: run ANY worldserver console command with console authority and return its "
+            "captured output. This is the general escape hatch: if a console command exists, it "
+            "runs here, and it does exactly what typing it at the console would do. Examples: "
+            ".tele name <bot> <location>, .go xyz <x> <y> <z> <map>, .npc info, .lookup item <name>, "
+            ".reload creature_template, .server info, .gm list, .modify hp. Prefer reload_config "
+            "over '.reload config' so the result carries a real success flag. FOUR FAMILIES ARE "
+            "REFUSED and answer error code command_refused, which is a policy decision and NOT a "
+            "syntax error: do not retry or rephrase, and do not route around it. They are "
+            "'server', 'quit', 'exit' (stopping the worldserver would bypass the protected-account "
+            "guard that gates every other path to it) and 'account' (account administration is not "
+            "verification tooling). Nothing else is filtered: .ban, .unban and .character deleted "
+            "delete all run, so read the command you are about to send."
         ),
     )
     async def run_gm_command(command: str) -> GmCommandResult:
         GmCommandRequest(command=command)
         return await anyio.to_thread.run_sync(partial(client.gm_command, command=command))
+
+    @server.tool(
+        annotations=IDEMPOTENT_MUTATING,
+        description=(
+            "Re-read worldserver.conf and every module config, then refresh visibility distances, "
+            "exactly as the '.reload config' console command does. Use this to apply an edit to any "
+            "*.conf without stopping the worldserver: module settings such as "
+            "PlayerbotsSocial.Enable or AiPlayerbot.BotActiveAlone take effect immediately, because "
+            "each module re-reads its own configuration from the same hook. Settings that are only "
+            "consumed at startup still need a restart."
+        ),
+    )
+    async def reload_config() -> ReloadConfigResult:
+        return await anyio.to_thread.run_sync(client.reload_config)
 
     @server.tool(
         annotations=IDEMPOTENT_MUTATING,

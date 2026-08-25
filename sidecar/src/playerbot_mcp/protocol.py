@@ -45,6 +45,7 @@ class ErrorCode(StrEnum):
     INVALID_GUID = "invalid_guid"
     INVALID_LIMIT = "invalid_limit"
     INVALID_COMMAND = "invalid_command"
+    COMMAND_REFUSED = "command_refused"
     INVALID_CONDITION = "invalid_condition"
     UNSUPPORTED_DESTINATION = "unsupported_destination"
     RESPONSE_TOO_LARGE = "response_too_large"
@@ -214,11 +215,22 @@ class TeleportToGameObjectRequest(VerificationRequest):
 
 
 class GmCommandRequest(VerificationRequest):
-    """Run one console command with console authority. Server and account administration are refused."""
+    """Run one console command with console authority.
+
+    The server declines four families outright and answers COMMAND_REFUSED rather than
+    INVALID_COMMAND, so a refusal is distinguishable from a syntax mistake and must not be
+    retried or rephrased. Everything else runs exactly as typing it at the console would.
+    """
 
     operation: ClassVar[str] = "gm_command"
 
     command: str = Field(min_length=1)
+
+
+class ReloadConfigRequest(VerificationRequest):
+    """Re-read worldserver.conf and every module config, as `.reload config` does."""
+
+    operation: ClassVar[str] = "reload_config"
 
 
 class HoldActivityRequest(VerificationRequest):
@@ -914,6 +926,10 @@ class GmCommandResult(WireModel):
     command: str
     succeeded: bool
     output: str
+
+
+class ReloadConfigResult(WireModel):
+    reloaded: bool
 
 
 class ActivityLeaseState(WireModel):

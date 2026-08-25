@@ -7,11 +7,37 @@ This project is not ready for installation or use. It provides no deployment or 
 Playerbots MCP provides an authenticated loopback verification server inside AzerothCore and a typed Python MCP
 sidecar. The C++ bridge owns framing, authentication, bounded world thread operations, inspection, command dispatch,
 anomaly reads, guarded homebind recovery, two verification staging operations (overwrite a skill the bot already
-knows, teleport a bot beside the nearest spawned gameobject of an entry), and one GM tooling operation that runs a
-worldserver console command with console authority and returns its output (`run_gm_command`; server lifecycle and
-account administration commands are refused). It also owns bounded activity lease operations for observing selected
-random bots without changing the global active population. The Python sidecar exposes those operations as typed MCP
-tools.
+knows, teleport a bot beside the nearest spawned gameobject of an entry), a config reload (`reload_config`), and one
+GM tooling operation that runs a worldserver console command with console authority and returns its output
+(`run_gm_command`). It also owns bounded activity lease operations for observing selected random bots without
+changing the global active population. The Python sidecar exposes those operations as fourteen typed MCP tools.
+
+## Console authority and the four refused families
+
+`run_gm_command` is a general escape hatch, not a curated list. If a console command exists, it runs, and it does
+what typing it at the worldserver console would do. That includes commands that destroy data: `.ban`, `.unban`, and
+`.character deleted delete` all pass through. Read the command before sending it.
+
+Four command families are declined and answer error code `command_refused`:
+
+* `server`, `quit`, `exit`. Stopping the worldserver from here would bypass the protected account guard that gates
+  every other path to the same action, and the caller is an agent rather than a person.
+* `account`. Account administration is not verification tooling.
+
+`command_refused` is deliberately distinct from `invalid_command`. A refusal is a policy answer, not a syntax
+mistake: do not retry it, do not rephrase it, and do not route around it. Run the command at the worldserver console
+instead. Nothing outside those four families is filtered, so the refusal is not a general safety boundary. The line
+it draws is "can end the session that is running right now", not "destructive".
+
+A deployment that should not expose console authority at all leaves this module out of the build. It is opt in.
+
+## Applying a configuration change without a restart
+
+`reload_config` re-reads `worldserver.conf` and every `etc/modules/*.conf`, then refreshes visibility distances,
+exactly as the `.reload config` console command does. Module settings take effect immediately, because each module
+re-reads its own configuration from the same `OnAfterConfigLoad` hook. Prefer it over sending `.reload config`
+through `run_gm_command`: it returns a real success flag rather than scraped console text, and it cannot be typo'd
+into a different reload. Settings a module consumes only at startup still need a restart.
 
 The server reads inspection data from mod-playerbots-telemetry and delegates intervention state to
 mod-playerbots-recovery. It does not store MCP transport or protocol code in mod-playerbots.

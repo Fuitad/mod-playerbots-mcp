@@ -338,12 +338,18 @@ TEST(PlayerbotVerificationProtocolTest, GmCommandParsesOneCommandAndRefusesServe
     EXPECT_EQ(tele.request->operation, Operation::GmCommand);
     EXPECT_EQ(tele.request->command, ".tele name Leporaitceau brill");
     EXPECT_EQ(parse(R"("operation":"gm_command","command":"")").error.code, ErrorCode::InvalidCommand);
-    EXPECT_EQ(parse(R"("operation":"gm_command","command":".server shutdown 1")").error.code,
-              ErrorCode::InvalidCommand);
-    EXPECT_EQ(parse(R"("operation":"gm_command","command":"account set gmlevel x 3")").error.code,
-              ErrorCode::InvalidCommand);
     EXPECT_EQ(parse(R"("operation":"gm_command","command":".tele brill","botGuid":3)").error.code,
               ErrorCode::MalformedRequest);
+
+    /*
+     * A refusal and a malformed command are different answers on purpose. Sharing InvalidCommand
+     * made a policy decision look like a typo, which is the one reading that invites a caller to
+     * rephrase and try again rather than stop.
+     */
+    EXPECT_EQ(parse(R"("operation":"gm_command","command":".server shutdown 1")").error.code,
+              ErrorCode::CommandRefused);
+    EXPECT_EQ(parse(R"("operation":"gm_command","command":"account set gmlevel x 3")").error.code,
+              ErrorCode::CommandRefused);
 
     EXPECT_TRUE(IsRefusedGmCommand(" .Server restart"));
     EXPECT_TRUE(IsRefusedGmCommand("quit"));
@@ -351,6 +357,25 @@ TEST(PlayerbotVerificationProtocolTest, GmCommandParsesOneCommandAndRefusesServe
     EXPECT_FALSE(IsRefusedGmCommand(".servername"));
     EXPECT_FALSE(IsRefusedGmCommand("tele name Foo brill"));
     EXPECT_FALSE(IsRefusedGmCommand(".go xyz 1 2 3 0"));
+
+    // The line is "can end the running session", not "destructive". These pass, and the tool
+    // description says so, because pretending otherwise is what makes a partial guard dangerous.
+    EXPECT_FALSE(IsRefusedGmCommand(".ban character Foo 1d spam"));
+    EXPECT_FALSE(IsRefusedGmCommand(".character deleted delete Foo"));
+}
+
+TEST(PlayerbotVerificationProtocolTest, ReloadConfigParsesAsItsOwnOperationAndTakesNoArgument)
+{
+    auto const parse = [](std::string const& body)
+    {
+        return ParseRequestPayload(R"({"schemaVersion":2,"requestId":14,"token":")" + TEST_TOKEN + R"(",)" + body + '}',
+                                   TestTokenDigest());
+    };
+    RequestParseResult const reload = parse(R"("operation":"reload_config")");
+    ASSERT_TRUE(reload.request);
+    EXPECT_EQ(reload.request->operation, Operation::ReloadConfig);
+
+    EXPECT_EQ(parse(R"("operation":"reload_config","botGuid":3)").error.code, ErrorCode::MalformedRequest);
 }
 
 TEST(PlayerbotVerificationProtocolTest, PaginationIsGuidOrderedBoundedAndExclusive)

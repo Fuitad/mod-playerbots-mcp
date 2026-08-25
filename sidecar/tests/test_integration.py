@@ -637,6 +637,30 @@ class TestToolsOverTheWire:
         assert server.requests[0]["command"] == ".tele name Bot brill"
 
     @pytest.mark.anyio
+    async def test_reload_config_asks_the_server_to_reread_every_config(self) -> None:
+        with FakeVerificationServer(responder({"reloaded": True})) as server:
+            async with Client(make_mcp_server(server.port)) as client:
+                result = await client.call_tool("reload_config", {})
+
+        assert result.structured_content is not None
+        assert result.structured_content["reloaded"] is True
+        assert [request["operation"] for request in server.requests] == ["reload_config"]
+
+        # No argument at all: a reload that took a scope would be a different, unbuilt feature.
+        assert set(server.requests[0]) == {"schemaVersion", "requestId", "token", "operation"}
+
+    def test_a_refused_command_carries_its_own_code_not_the_malformed_one(self) -> None:
+        """A caller must be able to stop rather than rephrase, so the two carry different codes."""
+        handler: Handler = lambda request: json.dumps(  # noqa: E731
+            error_envelope(request["requestId"], "command_refused")
+        ).encode()
+        with FakeVerificationServer(handler) as server, pytest.raises(ServerError) as caught:
+            make_client(server.port).gm_command(command=".server shutdown 1")
+
+        assert caught.value.code is ErrorCode.COMMAND_REFUSED
+        assert caught.value.code is not ErrorCode.INVALID_COMMAND
+
+    @pytest.mark.anyio
     async def test_activity_lease_tools_acquire_inspect_and_release_one_bot(self) -> None:
         lease_token = "c" * 32
 
@@ -1246,6 +1270,7 @@ class TestStdioAdapter:
             "set_bot_skill",
             "teleport_bot_to_gameobject",
             "run_gm_command",
+            "reload_config",
             "hold_bot_activity",
             "release_bot_activity",
             "recover_bot",
