@@ -378,7 +378,7 @@ class TestStrictModels:
             StatusResult.model_validate(
                 {
                     "protocolSchemaVersion": 2,
-                    "inspectionSchemaVersion": 5,
+                    "inspectionSchemaVersion": 6,
                     "moduleEnabled": "true",
                     "queueAvailable": True,
                     "queueSize": 0,
@@ -540,6 +540,38 @@ class TestStrictModels:
         with pytest.raises(ValidationError):
             InspectResult.model_validate(payload)
 
+    def test_waiting_out_a_reclaim_delay_is_not_a_failed_revive(self) -> None:
+        """The whole point of the outcome field: an observer must tell waiting from failing."""
+        payload = inspection_payload()
+        revive = payload["recovery"]["latestRevive"]
+        revive["outcome"] = "ineligible"
+        revive["success"] = False
+        revive["aliveAfter"] = False
+
+        parsed = InspectResult.model_validate(payload).recovery.latest_revive
+        assert parsed.outcome == "ineligible"
+        assert parsed.success is False
+
+        revive["outcome"] = "failed"
+        failed = InspectResult.model_validate(payload).recovery.latest_revive
+        assert failed.outcome == "failed"
+        assert failed.success is False
+
+        # Both are unsuccessful, so only the outcome separates a healthy corpse run from a stuck bot.
+        assert parsed.outcome != failed.outcome
+
+    def test_a_success_flag_disagreeing_with_the_outcome_is_refused(self) -> None:
+        payload = inspection_payload()
+        payload["recovery"]["latestRevive"]["outcome"] = "failed"
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    def test_an_unknown_revive_outcome_is_refused_rather_than_coerced(self) -> None:
+        payload = inspection_payload()
+        payload["recovery"]["latestRevive"]["outcome"] = "pending"
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
     def test_recovery_requires_truthful_corpse_and_revive_details(self) -> None:
         payload = inspection_payload()
         payload["recovery"] = {
@@ -564,6 +596,7 @@ class TestStrictModels:
                 "ageMs": 1_000,
                 "attemptGeneration": 7,
                 "currentCycle": False,
+                "outcome": "failed",
                 "success": False,
                 "aliveAfter": False,
             },

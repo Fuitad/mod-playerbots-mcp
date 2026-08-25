@@ -167,7 +167,7 @@ def responder(result: dict[str, Any]) -> Handler:
 
 STATUS_RESULT: dict[str, Any] = {
     "protocolSchemaVersion": 2,
-    "inspectionSchemaVersion": 5,
+    "inspectionSchemaVersion": 6,
     "moduleEnabled": True,
     "queueAvailable": True,
     "queueSize": 3,
@@ -377,7 +377,7 @@ class TestServerErrors:
 
 
 class TestProtocolFaults:
-    @pytest.mark.parametrize("inspection_schema", [4, 6])
+    @pytest.mark.parametrize("inspection_schema", [5, 7])
     def test_inspection_result_schema_mismatch_is_a_stable_protocol_error(
         self, inspection_schema: int
     ) -> None:

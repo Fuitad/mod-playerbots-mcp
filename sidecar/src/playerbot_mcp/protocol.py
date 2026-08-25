@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from pydantic.alias_generators import to_camel
 
 SCHEMA_VERSION = 2
-INSPECTION_SCHEMA_VERSION = 5
+INSPECTION_SCHEMA_VERSION = 6
 FRAME_HEADER_BYTES = 4
 MAX_FRAME_PAYLOAD_BYTES = 64 * 1024
 MAX_RESPONSE_PAYLOAD_BYTES = 60 * 1024
@@ -636,11 +636,21 @@ class CorpseState(WireModel):
 
 
 class LatestRevive(WireModel):
+    """The most recent revive attempt, and why it ended as it did.
+
+    `outcome` exists because `success` alone was not a usable answer. The corpse revive action
+    runs on every tick a ghost waits out its reclaim delay, so a bot doing exactly the right
+    thing reported an unbroken run of unsuccessful attempts. `ineligible` and `declined` are
+    NOT failures and must not be counted as such: only `failed` means an attempt was issued and
+    the bot is still dead.
+    """
+
     available: bool
     timestamp_ms: int = Field(ge=0)
     age_ms: int = Field(ge=0)
     attempt_generation: int = Field(ge=0)
     current_cycle: bool
+    outcome: Literal["ineligible", "declined", "failed", "succeeded"]
     success: bool
     alive_after: bool
 
@@ -651,10 +661,15 @@ class LatestRevive(WireModel):
             or self.age_ms != 0
             or self.attempt_generation != 0
             or self.current_cycle
+            or self.outcome != "ineligible"
             or self.success
             or self.alive_after
         ):
             raise ValueError("An unavailable revive outcome cannot claim result details.")
+
+        # The server derives one from the other, so a disagreement means the wire is wrong.
+        if self.success != (self.outcome == "succeeded"):
+            raise ValueError("The success flag must agree with the revive outcome.")
         if self.success and not self.alive_after:
             raise ValueError("A successful revive outcome must leave the bot alive.")
         return self
