@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from pydantic.alias_generators import to_camel
 
 SCHEMA_VERSION = 2
-INSPECTION_SCHEMA_VERSION = 6
+INSPECTION_SCHEMA_VERSION = 7
 FRAME_HEADER_BYTES = 4
 MAX_FRAME_PAYLOAD_BYTES = 64 * 1024
 MAX_RESPONSE_PAYLOAD_BYTES = 60 * 1024
@@ -531,6 +531,9 @@ class Transport(WireModel):
 
 class Movement(WireModel):
     can_move: bool
+    # The core refuses every cast from a mounted player, so a bot that looks idle at a forge or a
+    # node may simply be mounted rather than blocked on anything the economy reports.
+    mounted: bool
 
 
 class TravelPoint(WireModel):

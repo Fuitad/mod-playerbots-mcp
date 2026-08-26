@@ -54,7 +54,7 @@ def latest_attempt(
 def inspection_payload(**overrides: Any) -> dict[str, Any]:
     """Builds a complete verification inspection exactly as the C++ serializer emits it."""
     payload: dict[str, Any] = {
-        "schemaVersion": 6,
+        "schemaVersion": 7,
         "ok": True,
         "identity": {
             "guid": "0x0000000000000003",
@@ -89,7 +89,7 @@ def inspection_payload(**overrides: Any) -> dict[str, Any]:
             "movementState": "moving",
         },
         "transport": {"attached": False, "guid": "", "entry": 0},
-        "movement": {"canMove": True},
+        "movement": {"canMove": True, "mounted": False},
         "travel": {
             "available": True,
             "status": "travel",

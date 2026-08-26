@@ -167,7 +167,7 @@ def responder(result: dict[str, Any]) -> Handler:
 
 STATUS_RESULT: dict[str, Any] = {
     "protocolSchemaVersion": 2,
-    "inspectionSchemaVersion": 6,
+    "inspectionSchemaVersion": 7,
     "moduleEnabled": True,
     "queueAvailable": True,
     "queueSize": 3,
@@ -377,7 +377,7 @@ class TestServerErrors:
 
 
 class TestProtocolFaults:
-    @pytest.mark.parametrize("inspection_schema", [5, 7])
+    @pytest.mark.parametrize("inspection_schema", [6, 8])
     def test_inspection_result_schema_mismatch_is_a_stable_protocol_error(
         self, inspection_schema: int
     ) -> None:
@@ -558,6 +558,7 @@ class TestToolsOverTheWire:
         assert result.structured_content["finance"]["moneyCopper"] == 123_456_789
         assert result.structured_content["rpgTarget"]["name"] == "Defilers Emissary"
         assert result.structured_content["movement"]["canMove"] is True
+        assert result.structured_content["movement"]["mounted"] is False
         assert result.structured_content["recovery"]["corpse"]["present"] is False
         assert result.structured_content["equipment"]["items"][0]["maximumDurability"] == 80
         assert result.structured_content["economy"]["observedAt"] == 1_700_000_450

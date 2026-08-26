@@ -378,7 +378,7 @@ class TestStrictModels:
             StatusResult.model_validate(
                 {
                     "protocolSchemaVersion": 2,
-                    "inspectionSchemaVersion": 6,
+                    "inspectionSchemaVersion": 7,
                     "moduleEnabled": "true",
                     "queueAvailable": True,
                     "queueSize": 0,
@@ -411,9 +411,24 @@ class TestStrictModels:
         with pytest.raises(ValidationError):
             InspectResult.model_validate(payload)
 
-    def test_idle_travel_is_explicit_and_keeps_independent_movement_capability(self) -> None:
+    def test_mounted_state_is_reported_independently_of_movement_capability(self) -> None:
+        payload = inspection_payload()
+        payload["movement"] = {"canMove": True, "mounted": True}
+
+        result = InspectResult.model_validate(payload)
+
+        assert result.movement.mounted is True
+        assert result.movement.can_move is True
+
+    def test_inspection_without_mounted_state_is_rejected(self) -> None:
         payload = inspection_payload()
         payload["movement"] = {"canMove": True}
+        with pytest.raises(ValidationError):
+            InspectResult.model_validate(payload)
+
+    def test_idle_travel_is_explicit_and_keeps_independent_movement_capability(self) -> None:
+        payload = inspection_payload()
+        payload["movement"] = {"canMove": True, "mounted": False}
         payload["travel"] |= {
             "available": True,
             "status": "cooldown",

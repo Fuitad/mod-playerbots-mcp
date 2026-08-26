@@ -44,10 +44,13 @@ mod-playerbots-recovery. It does not store MCP transport or protocol code in mod
 
 ## Travel diagnostics
 
-`inspect_bot` includes typed `movement` and `travel` sections in inspection schema version 5. They are read only and
+`inspect_bot` includes typed `movement` and `travel` sections in inspection schema version 7. They are read only and
 report the ordinary Playerbot travel state that already exists on the world thread.
 
 * `movement.canMove` reports the actual Playerbot movement capability independently from TravelMgr.
+* `movement.mounted` reports whether the bot is mounted. The core refuses every cast from a mounted player that
+  is not flagged castable while mounted, answering `SPELL_FAILED_NOT_MOUNTED`, so a bot parked at a forge or a
+  node with nothing else wrong may simply be mounted.
 * `travel.status`, `travel.destination`, and `travel.forced` describe the active TravelMgr target.
 * `travel.idleNoDestination` is true for `NullTravelDestination`. The destination is null while status and
   `timeLeftMs` preserve the actual idle cooldown state. Active idle state uses cooldown status with a remaining value
@@ -64,7 +67,7 @@ change on the next world update.
 
 ## RPG target diagnostics
 
-`inspect_bot` includes the required `rpgTarget` section in inspection schema version 5. Agents should read this
+`inspect_bot` includes the required `rpgTarget` section in inspection schema version 7. Agents should read this
 section instead of inferring an RPG target from the last action, nearby NPCs, or the ordinary `travel` section.
 
 * `available` states whether the current `"rpg target"` AI value resolves to a live world object.
@@ -79,7 +82,7 @@ select, clear, or move toward a target.
 
 ## Recovery and equipment diagnostics
 
-Inspection schema version 5 reports the state needed to verify death recovery without treating an attempted packet
+Inspection schema version 7 reports the state needed to verify death recovery without treating an attempted packet
 as success.
 
 * `recovery.alive`, `recovery.ghost`, and `recovery.inArena` report the current player state.

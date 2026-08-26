@@ -8,7 +8,8 @@ The C++ server listens only on `127.0.0.1`. Every request uses wire schema versi
 `PlayerbotsMCP.Port` from `mod_playerbots_mcp.conf`.
 
 The sidecar exposes status, bot listing, inspection, loop anomaly inspection, bounded waits, command dispatch, and
-guarded homebind recovery. Inspection schema version 5 includes typed read only movement capability, explicit idle
+guarded homebind recovery. Inspection schema version 7 includes typed read only movement capability and mount
+state, explicit idle
 travel cooldowns, corpse reclaim readiness, death generation aware revive outcomes, equipped durability, and RPG
 target diagnostics.
 An idle `NullTravelDestination` is either an active bounded cooldown or a terminal `expired` or `none` state with zero
