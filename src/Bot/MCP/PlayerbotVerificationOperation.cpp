@@ -28,6 +28,7 @@
 #include "Chat.h"
 #include "DBCStores.h"
 #include "GameTime.h"
+#include "Map.h"
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -745,11 +746,14 @@ Response BuildTeleportToGameObjectResponse(Request const& request)
     uint32 const entry = static_cast<uint32>(RequestNumber(request, "gameObjectEntry"));
     GameObjectData const* nearest = nullptr;
     float nearestDistance = 0.0f;
+    // Gameobject pool spawn state lives on the owning Map, not on PoolMgr; only quest pool state is
+    // still global. The loop below only considers spawns on the bot's own map, so that is the owner.
+    SpawnedPoolData const& poolData = bot->GetMap()->GetPoolData();
     for (auto const& [spawnId, data] : sObjectMgr->GetAllGOData())
     {
         if (data.id != entry || data.mapid != bot->GetMapId())
             continue;
-        if (sPoolMgr->IsPartOfAPool<GameObject>(spawnId) && !sPoolMgr->IsSpawnedObject<GameObject>(spawnId))
+        if (sPoolMgr->IsPartOfAPool<GameObject>(spawnId) && !poolData.IsSpawnedObject<GameObject>(spawnId))
             continue;
         float const distance = bot->GetExactDist(data.posX, data.posY, data.posZ);
         if (!nearest || distance < nearestDistance)
